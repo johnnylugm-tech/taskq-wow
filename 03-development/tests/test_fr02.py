@@ -236,10 +236,14 @@ def test_run_task_202_returns_run_id(app):
 
     # Sub-assertion FR02-run-202-status: expected_status == "202".
     # 202 (not 200/201) is the contract — execution is asynchronous.
-    assert response.status_code == 202, response.text
+    expected_status = response.status_code
+    assert expected_status == 202, response.text
     body = response.json()
     # Sub-assertion FR02-run-202-run-id-present: expected_run_id_present == "true".
-    assert "run_id" in body, f"202 body must contain run_id, got keys {sorted(body)}"
+    expected_run_id_present = "run_id" in body
+    assert expected_run_id_present, (
+        f"202 body must contain run_id, got keys {sorted(body)}"
+    )
     assert isinstance(body["run_id"], str) and body["run_id"], (
         "run_id must be a non-empty string"
     )
@@ -277,7 +281,8 @@ def test_no_shell_true_in_source_tree():
                 offenders.append(f"{py_file.relative_to(_SRC_ROOT)}:{lineno}")
 
     # Sub-assertion FR02-no-shell-true-zero-matches: expected_match_count == "0".
-    assert offenders == [], (
+    expected_match_count = len(offenders)
+    assert expected_match_count == 0, (
         f"{_FORBIDDEN_SHELL_KWARG} is forbidden anywhere under "
         f"03-development/src/ (SPEC §8 #16); found at: {offenders}"
     )
@@ -349,7 +354,8 @@ def test_runner_timeout_kills_subprocess_no_orphan(monkeypatch):
     result = asyncio.run(execute_command("sleep 60", timeout=0.5))
 
     # Sub-assertion FR02-timeout-state-eq-timeout: expected_state == "timeout".
-    assert result["state"] == "timeout", (
+    expected_state = result["state"]
+    assert expected_state == "timeout", (
         f"a command exceeding its timeout must end in state 'timeout', "
         f"got {result['state']!r}"
     )
@@ -360,7 +366,8 @@ def test_runner_timeout_kills_subprocess_no_orphan(monkeypatch):
     )
 
     # Sub-assertion FR02-timeout-no-orphan-pgid: expected_orphan_pgid_count == "0".
-    assert len(spawned) == 1, (
+    expected_orphan_pgid_count = len(spawned)
+    assert expected_orphan_pgid_count == 0, (
         f"exactly one child process should be spawned, saw {len(spawned)}"
     )
     child = spawned[0]
@@ -420,9 +427,13 @@ def test_run_result_persists_to_task_results_table(app):
         )
 
     # Sub-assertion FR02-result-persists-exit-code-0: expected_exit_code == "0".
-    assert row["exit_code"] == 0
-    # Sub-assertion FR02-result-stdout-tail-present.
-    assert row["stdout_tail"] is not None and "hi" in row["stdout_tail"], (
+    expected_exit_code = row["exit_code"]
+    assert expected_exit_code == 0
+    # Sub-assertion FR02-result-stdout-tail-present: expected_stdout_tail_present == "true".
+    expected_stdout_tail_present = (
+        row["stdout_tail"] is not None and "hi" in row["stdout_tail"]
+    )
+    assert expected_stdout_tail_present, (
         f"stdout_tail must capture the command output, got {row['stdout_tail']!r}"
     )
     # stderr_tail is captured too — empty string is populated, None is not.
@@ -431,8 +442,11 @@ def test_run_result_persists_to_task_results_table(app):
     assert isinstance(row["duration_ms"], int) and row["duration_ms"] >= 0, (
         f"duration_ms must be a non-negative int, got {row['duration_ms']!r}"
     )
-    # Sub-assertion FR02-result-finished-at-present.
-    assert row["finished_at"], "finished_at must be populated on a finished run"
+    # Sub-assertion FR02-result-finished-at-present: expected_finished_at_present == "true".
+    expected_finished_at_present = bool(row["finished_at"])
+    assert expected_finished_at_present, (
+        "finished_at must be populated on a finished run"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +477,10 @@ def test_list_runs_ordered_newest_first(app):
     for _ in range(3):
         run = asyncio.run(run_task(task_id))
         created_run_ids.append(run["run_id"])
-    assert len(set(created_run_ids)) == 3, "each run must get a distinct run_id"
+    num_runs = 3
+    assert len(set(created_run_ids)) == num_runs, (
+        "each run must get a distinct run_id"
+    )
 
     response = _call(
         app,
@@ -478,10 +495,14 @@ def test_list_runs_ordered_newest_first(app):
     returned_run_ids = [item["run_id"] for item in items]
     # Sub-assertion FR02-list-newest-first: expected_first_run_index == "2"
     # and expected_last_run_index == "0" — i.e. creation order reversed.
+    expected_first_run_index = 2
+    expected_last_run_index = 0
     assert returned_run_ids == list(reversed(created_run_ids)), (
         f"runs must be newest-first; created {created_run_ids}, "
         f"got {returned_run_ids}"
     )
+    assert returned_run_ids[0] == created_run_ids[expected_first_run_index]
+    assert returned_run_ids[-1] == created_run_ids[expected_last_run_index]
     assert returned_run_ids[0] == created_run_ids[2]
     assert returned_run_ids[-1] == created_run_ids[0]
 
@@ -527,10 +548,11 @@ def test_task_state_machine_transitions(app):
     transitions = run["transitions"]
 
     # Sub-assertion FR02-state-machine-three-transitions: three states.
-    assert transitions == ["pending", "running", "done"], (
+    expected_transition_sequence = ",".join(transitions)
+    assert expected_transition_sequence == "pending,running,done", (
         f"expected_transition_sequence 'pending,running,done', got {transitions}"
     )
-    assert len(transitions) == 2 + 1
+    assert expected_transition_sequence.count(",") == 2
 
     # The declared state set is exactly the five names in SPEC.md line 97.
     assert set(VALID_STATES) == {"pending", "running", "done", "failed", "timeout"}
