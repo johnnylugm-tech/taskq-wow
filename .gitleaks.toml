@@ -1,0 +1,36 @@
+# Delivered by `init-project` — templates/.gitleaks.toml is the single
+# source; a project's copy is written once and not re-synced (same shape as
+# harness_quality_gate.yml, see core/ci_template.py). SKIP, never overwrite:
+# unlike the CI workflow this file is one projects already hand-author
+# (three corpus projects shipped their own before this template existed),
+# so init-project never touches an existing copy, with or without
+# --overwrite.
+#
+# Round 92. secrets_scanning (tier-1, threshold 100) treats a clean gitleaks
+# run as proof of no secrets. The framework itself writes free-text agent
+# excerpts (test names, coverage summaries) into `.methodology/*.json` and
+# commits them (Round 90: the record has to reach git). generic-api-key's
+# entropy rule fires on names like `test_invalid_api_key_returns_401` —
+# measured on a real project's committed Gate 1 evidence, which blocked P5.
+# Scoped to that ONE rule so a real credential under .methodology/ is still
+# caught by private-key / aws-access-token / github-pat / etc. — verified:
+# a private key planted under .methodology/ is still flagged under this
+# config; a real secret outside .methodology/ is unaffected.
+#
+# The path is `(^|/)\.methodology...`, not `^\.methodology...`: two of the
+# three real gitleaks invocations pass `--source` as an ABSOLUTE path (the
+# S4 tool run and the P5 verification prompt), and gitleaks' allowlist
+# match is against the path IT REPORTS — which is the absolute path when
+# --source is absolute, so a `^`-anchored pattern silently never matches
+# and this file would do nothing for either of them. Verified: the same
+# tree scanned with a relative `--source .` and an absolute `--source
+# /abs/path` both silence `.methodology/`'s generic-api-key finding under
+# this pattern; a sibling directory merely named `foo.methodology-archive-
+# nope/` is not swept in by it.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Framework-produced audit records under .methodology/ trip generic-api-key on test names and coverage summaries, not real credentials"
+targetRules = ["generic-api-key"]
+paths = ['''(^|/)\.methodology(-archive)?/''']
