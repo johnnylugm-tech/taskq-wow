@@ -342,3 +342,156 @@ def test_fr01_delete_unknown_id_returns_404_for_missing(client):
     assert "task-uuid-missing" not in response.text, (
         "404 body must not echo the unknown id back to the caller"
     )
+
+
+# ---------------------------------------------------------------------------
+# Coverage-filling tests — exercise input-validation branches in
+# api/tasks.py::_validate_create_payload that the AC-1.* tests above do not
+# reach (non-dict body, name length cap, injection denylist, non-string
+# command, malformed JSON, non-integer limit). These mirror the SPEC.md
+# §3 FR-01 validation rule set; the assertion targets are stable
+# (status code + problem+json content-type), never the human-readable
+# detail string.
+# ---------------------------------------------------------------------------
+
+
+def test_fr01_create_rejects_non_dict_body(client):
+    """POST /v1/tasks with a JSON array body must yield 422 + problem+json.
+
+    SPEC.md §3 FR-01 — request must be a JSON object with fields name+command.
+    Coverage: api/tasks.py::_validate_create_payload `not isinstance(payload, dict)`.
+    """  # NFR-11
+    response = client.post("/v1/tasks", json=["not", "a", "dict"])
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_fr01_create_rejects_oversized_name(client):
+    """POST /v1/tasks with name > 1000 chars must yield 422 + problem+json.
+
+    SPEC.md §3 FR-01 — name length cap. Coverage: api/tasks.py::
+    _validate_create_payload `len(name) > _MAX_NAME_LEN`.
+    """  # NFR-10
+    response = client.post(
+        "/v1/tasks",
+        json={"name": "x" * 1001, "command": "echo big"},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_fr01_create_rejects_injection_chars_in_name(client):
+    """POST /v1/tasks with shell-metacharacter in name must yield 422.
+
+    SPEC.md §3 FR-01 / SPEC.md §8 #16 — injection denylist. Coverage:
+    api/tasks.py::_validate_create_payload `_INJECTION_CHARS.search(name)`.
+    """  # NFR-10
+    response = client.post(
+        "/v1/tasks",
+        json={"name": "bad;name", "command": "echo hi"},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_fr01_create_rejects_non_string_command(client):
+    """POST /v1/tasks with a numeric command must yield 422 + problem+json.
+
+    SPEC.md §3 FR-01 — command must be a non-empty string. Coverage:
+    api/tasks.py::_validate_create_payload `command` type check.
+    """  # NFR-11
+    response = client.post(
+        "/v1/tasks",
+        json={"name": "ok-name", "command": 42},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_fr01_create_rejects_malformed_json(client):
+    """POST /v1/tasks with a body that is not parseable JSON must yield 422.
+
+    SPEC.md §3 FR-01 — request body must be valid JSON. Coverage:
+    api/tasks.py::create_task_endpoint `except Exception: return _problem(...)`.
+    """  # NFR-09
+    response = client.post(
+        "/v1/tasks",
+        content=b"{this is : not json",
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_fr01_list_rejects_non_integer_limit(client):
+    """GET /v1/tasks?limit=abc must yield 422 (limit parse failure).
+
+    SPEC.md §3 FR-01 — limit must be an integer between 1 and 200.
+    Coverage: api/tasks.py::list_tasks_endpoint `except ValueError` branch.
+    """  # NFR-11
+    response = client.get("/v1/tasks", params={"limit": "abc"})
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+# ---------------------------------------------------------------------------
+# Service-layer direct-call coverage — exercises the ValueError raise in
+# list_tasks and the delete_task return path that the HTTP-level tests do
+# not touch directly (the router converts the 404 case via a different
+# code path; calling the service ensures the repository wiring is real).
+# ---------------------------------------------------------------------------
+
+
+def test_fr01_service_list_tasks_raises_for_out_of_range_limit():
+    """service.list_tasks must raise ValueError when limit > 200.
+
+    SPEC.md §3 FR-01 — limit cap; the router catches this before the call,
+    but the service contract is enforced independently. Coverage:
+    service/tasks.py::list_tasks limit guard.
+    """  # NFR-09
+    from taskq_api.service import tasks as svc
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        svc.list_tasks(limit=201)
+
+
+def test_fr01_service_delete_task_returns_true_for_existing():
+    """service.delete_task returns True when the row existed.
+
+    Repository delete branch coverage (delete_task_row success path).
+    """  # NFR-10
+    from taskq_api.service import tasks as svc
+    from taskq_api.repository import tasks as repo
+    # Reset state, insert a known row, then delete via service.
+    repo._reset_state()
+    tid = repo.insert_task(None, name="to-delete-via-svc", command="echo x")
+    assert svc.delete_task(tid) is True
+    assert svc.delete_task(tid) is False  # second call: row gone
+
+
+def test_fr01_repository_delete_task_row_returns_false_for_missing():
+    """repository.delete_task_row returns False when the id is unknown.
+
+    Direct repository exercise for the missing-id branch.
+    """  # NFR-10
+    from taskq_api.repository import tasks as repo
+    repo._reset_state()
+    assert repo.delete_task_row(None, "definitely-not-present") is False
+
+
+def test_fr01_repository_fetch_tasks_page_filters_by_status():
+    """repository.fetch_tasks_page honours the optional status filter.
+
+    Exercises the status filter branch in fetch_tasks_page.
+    """  # NFR-10 NFR-01
+    from taskq_api.repository import tasks as repo
+    repo._reset_state()
+    repo.insert_task(None, name="status-pending-a", command="echo a")
+    items, _cursor = repo.fetch_tasks_page(
+        None, limit=200, cursor=None, status="pending"
+    )
+    assert all(t["status"] == "pending" for t in items)
+    items_done, _ = repo.fetch_tasks_page(
+        None, limit=200, cursor=None, status="done"
+    )
+    assert items_done == []
