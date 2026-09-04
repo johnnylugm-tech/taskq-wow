@@ -116,7 +116,13 @@ async def execute_command(command: str, *, timeout: float) -> dict:
         await process.wait()
         return _outcome(started=started, state="timeout", exit_code=-1)
 
-    exit_code = process.returncode
+    # ``process.returncode`` is typed ``int | None`` because it reads as
+    # ``None`` until the child is reaped. ``communicate()`` above already
+    # waited for exit, so ``wait()`` returns immediately — and it returns
+    # the settled code as a plain ``int``, which keeps
+    # ``task_results.exit_code`` non-NULL (SPEC.md line 98) without a
+    # None-branch that no reachable state exercises.
+    exit_code = await process.wait()
     state = "done" if exit_code == 0 else "failed"
     return _outcome(
         started=started,
