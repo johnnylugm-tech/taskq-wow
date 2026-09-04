@@ -264,7 +264,7 @@ def test_no_shell_true_in_source_tree():
 
     Citations: SPEC.md line 96 — "禁 shell=True"; SPEC.md §8 #16 — grep gate,
     0 命中; SAD.md §2.5 — "All shell-outs use shlex.split(command) with *args".
-    """  # NFR-09
+    """  # NFR-02 NFR-09
     assert _SRC_ROOT.is_dir(), f"source tree not found at {_SRC_ROOT}"
 
     offenders = []
