@@ -495,3 +495,39 @@ def test_fr01_repository_fetch_tasks_page_filters_by_status():
         None, limit=200, cursor=None, status="done"
     )
     assert items_done == []
+
+
+def test_fr01_repository_maybe_seed_inner_check_returns(monkeypatch):
+    """[FR-01] Cover the inner ``return`` of double-checked locking in
+    ``_maybe_seed_synthetic``.
+
+    The double-checked locking pattern guards against two threads both
+    passing the outer ``if _seeded`` check before one of them flips the
+    flag under the lock. To exercise the inner ``if _seeded: return``
+    branch deterministically we replace ``_lock`` with a context manager
+    that flips ``_seeded`` to ``True`` the moment the function acquires
+    it — mimicking the case where another thread finished seeding first.
+    """  # NFR-10
+    from taskq_api.repository import tasks as repo
+
+    repo._reset_state()  # outer check sees False
+
+    class _RaceyLock:
+        def __enter__(self_inner):
+            # Pretend the other thread completed seeding right before we
+            # got the lock — the inner check must then short-circuit.
+            repo._seeded = True
+            return self_inner
+
+        def __exit__(self_inner, *exc):
+            return False
+
+    monkeypatch.setattr(repo, "_lock", _RaceyLock())
+    try:
+        repo._maybe_seed_synthetic()
+        # Inner return fired: no synthetic rows were inserted.
+        assert not any(k.startswith("seed-") for k in repo._store), (
+            "inner double-check should short-circuit before seeding"
+        )
+    finally:
+        repo._reset_state()  # leave state clean for downstream tests
