@@ -2,7 +2,7 @@
 # returncode: 0
 # agent_score: 100.0 | threshold: 80.0
 
-....................                                                     [100%]
+.................................                                        [100%]
 ================================ tests coverage ================================
 ______________ coverage: platform darwin, python 3.11.15-final-0 _______________
 
@@ -11,15 +11,18 @@ Name                                                  Stmts   Miss  Cover   Miss
 03-development/src/_p2_preflight_config_keys.py          12     12     0%   16-27
 03-development/src/taskq_api/__init__.py                  0      0   100%
 03-development/src/taskq_api/api/__init__.py              0      0   100%
-03-development/src/taskq_api/api/tasks.py                59      0   100%
-03-development/src/taskq_api/config.py                   13     13     0%   13-30
+03-development/src/taskq_api/api/runs.py                 28      0   100%
+03-development/src/taskq_api/api/tasks.py                63      0   100%
+03-development/src/taskq_api/config.py                   13      0   100%
 03-development/src/taskq_api/errors.py                    3      3     0%   16-27
 03-development/src/taskq_api/models/__init__.py           0      0   100%
 03-development/src/taskq_api/models/task.py              18      0   100%
 03-development/src/taskq_api/repository/__init__.py       0      0   100%
-03-development/src/taskq_api/repository/tasks.py         62      0   100%
+03-development/src/taskq_api/repository/results.py       15      0   100%
+03-development/src/taskq_api/repository/tasks.py         62      1    98%   78
 03-development/src/taskq_api/service/__init__.py          0      0   100%
+03-development/src/taskq_api/service/runner.py           44      0   100%
 03-development/src/taskq_api/service/tasks.py            23      0   100%
 -----------------------------------------------------------------------------------
-TOTAL                                                   190     28    85%
-20 passed in 0.31s
+TOTAL                                                   281     16    94%
+33 passed in 0.89s
