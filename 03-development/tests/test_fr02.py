@@ -240,7 +240,7 @@ def test_run_task_202_returns_run_id(app):
     assert expected_status == 202, response.text
     body = response.json()
     # Sub-assertion FR02-run-202-run-id-present: expected_run_id_present == "true".
-    expected_run_id_present = "run_id" in body
+    expected_run_id_present = "true" if "run_id" in body else "false"
     assert expected_run_id_present == "true", (
         f"202 body must contain run_id, got keys {sorted(body)}"
     )
@@ -366,8 +366,7 @@ def test_runner_timeout_kills_subprocess_no_orphan(monkeypatch):
     )
 
     # Sub-assertion FR02-timeout-no-orphan-pgid: expected_orphan_pgid_count == "0".
-    expected_orphan_pgid_count = len(spawned)
-    assert expected_orphan_pgid_count == 0, (
+    assert len(spawned) == 1, (
         f"exactly one child process should be spawned, saw {len(spawned)}"
     )
     child = spawned[0]
@@ -376,6 +375,16 @@ def test_runner_timeout_kills_subprocess_no_orphan(monkeypatch):
     assert child.returncode is not None, (
         "runner must `await process.wait()` after process.kill() — returncode "
         "is still None, so the child was never reaped"
+    )
+    # Count orphan pids — a live or zombie child would still be signalable.
+    expected_orphan_pgid_count = 0
+    try:
+        os.kill(child.pid, 0)
+        expected_orphan_pgid_count = 1
+    except ProcessLookupError:
+        pass
+    assert expected_orphan_pgid_count == 0, (
+        f"runner left {expected_orphan_pgid_count} orphan pid(s) after kill+wait"
     )
     with pytest.raises(ProcessLookupError):
         # A live *or* zombie child would still be signalable; ProcessLookupError
@@ -431,7 +440,8 @@ def test_run_result_persists_to_task_results_table(app):
     assert expected_exit_code == 0
     # Sub-assertion FR02-result-stdout-tail-present: expected_stdout_tail_present == "true".
     expected_stdout_tail_present = (
-        row["stdout_tail"] is not None and "hi" in row["stdout_tail"]
+        "true" if (row["stdout_tail"] is not None and "hi" in row["stdout_tail"])
+        else "false"
     )
     assert expected_stdout_tail_present == "true", (
         f"stdout_tail must capture the command output, got {row['stdout_tail']!r}"
@@ -443,7 +453,7 @@ def test_run_result_persists_to_task_results_table(app):
         f"duration_ms must be a non-negative int, got {row['duration_ms']!r}"
     )
     # Sub-assertion FR02-result-finished-at-present: expected_finished_at_present == "true".
-    expected_finished_at_present = bool(row["finished_at"])
+    expected_finished_at_present = "true" if bool(row["finished_at"]) else "false"
     assert expected_finished_at_present == "true", (
         "finished_at must be populated on a finished run"
     )
