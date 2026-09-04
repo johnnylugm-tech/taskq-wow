@@ -24,7 +24,8 @@
         },
         {
           "name": "taskq_api.api.metrics"
-        }
+        },
+        "taskq_api.api"
       ],
       "allowed_dependencies": [
         "service",
@@ -47,7 +48,8 @@
         },
         {
           "name": "taskq_api.service.runner"
-        }
+        },
+        "taskq_api.service"
       ],
       "allowed_dependencies": [
         "repository",
@@ -75,7 +77,8 @@
         },
         {
           "name": "taskq_api.repository.tags"
-        }
+        },
+        "taskq_api.repository"
       ],
       "allowed_dependencies": [
         "models",
@@ -99,7 +102,8 @@
         },
         {
           "name": "taskq_api.models.tag"
-        }
+        },
+        "taskq_api.models"
       ],
       "allowed_dependencies": []
     },
@@ -145,7 +149,9 @@
         },
         {
           "name": "taskq_api.errors"
-        }
+        },
+        "_p2_preflight_config_keys",
+        "taskq_api"
       ],
       "allowed_dependencies": []
     }
