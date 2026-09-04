@@ -786,10 +786,18 @@ def test_patched_http_exception_handler_passes_non_marker_through(client):
     transport = httpx.ASGITransport(app=passthrough_app)
 
     async def _hit():  # type: ignore[no-untyped-def]
+        # NOTE: use ``request`` (not the verb helpers ``get`` / ``post`` /
+        # ``delete``) because ``03-development/tests/in_memory_db_stub.py``
+        # monkey-patches those onto a sync adapter that spins up its own
+        # event loop — calling them from inside a coroutine would raise
+        # ``RuntimeError: Cannot run the event loop while another loop is
+        # running`` once FR-01's stub has been imported (cross-FR test
+        # isolation). ``request`` is intentionally left untouched by the
+        # stub (see the stub's own docstring).
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
         ) as http_client:
-            return await http_client.get("/non-marker-401")
+            return await http_client.request("GET", "/non-marker-401")
 
     response = asyncio.run(_hit())
     assert response.status_code == 401

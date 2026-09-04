@@ -135,10 +135,12 @@ def main(argv: List[str]) -> int:
     if args.command == "key" and args.subcommand == "create":
         return _handle_key_create(args.scope)
     # Defensive fallback for unknown subcommands — argparse already
-    # rejects them with SystemExit, so reaching this branch means the
-    # parser was extended without a handler.
+    # rejects them with SystemExit, so this branch is unreachable when
+    # the parser's subparsers are correctly configured with
+    # ``required=True``. We still raise SystemExit so the function's
+    # declared ``-> int`` contract holds without a trailing
+    # unreachable ``return`` statement.
     parser.error(f"unsupported subcommand: {args.command} {args.subcommand}")
-    return 2  # pragma: no cover — argparse exits before this.
 
 
 # Allow ``python -m taskq_api`` to invoke ``main(sys.argv[1:])``.
