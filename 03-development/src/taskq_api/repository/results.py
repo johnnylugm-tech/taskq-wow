@@ -24,7 +24,6 @@ Citations:
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 _lock = threading.Lock()
 # List preserves insertion order; ``fetch_results_for_task`` sorts by

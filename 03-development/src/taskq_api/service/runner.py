@@ -62,17 +62,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _reset_state() -> None:
-    """Reset the runner's per-process state (test seam — FR-02 fixture).
-
-    Currently a no-op stub: the runner owns no module-level state of its
-    own. Provided so the autouse fixture in
-    ``03-development/tests/test_fr02.py`` can iterate over reset functions
-    uniformly.
-    """  # NFR-10
-    return None
-
-
 def enqueue_run(task_id: str) -> str:
     """Register a run for an existing task and return its ``run_id``.
 
@@ -125,24 +114,38 @@ async def execute_command(command: str, *, timeout: float) -> dict:
         # zombie until the parent exits.
         process.kill()
         await process.wait()
-        duration_ms = int((time.monotonic() - started) * 1000)
-        return {
-            "state": "timeout",
-            "exit_code": -1,
-            "stdout_tail": "",
-            "stderr_tail": "",
-            "duration_ms": duration_ms,
-            "finished_at": _now_iso(),
-        }
-    duration_ms = int((time.monotonic() - started) * 1000)
+        return _outcome(started=started, state="timeout", exit_code=-1)
+
     exit_code = process.returncode
     state = "done" if exit_code == 0 else "failed"
+    return _outcome(
+        started=started,
+        state=state,
+        exit_code=exit_code,
+        stdout_tail=stdout_bytes.decode("utf-8", errors="replace"),
+        stderr_tail=stderr_bytes.decode("utf-8", errors="replace"),
+    )
+
+
+def _outcome(
+    *,
+    started: float,
+    state: str,
+    exit_code: int,
+    stdout_tail: str = "",
+    stderr_tail: str = "",
+) -> dict:
+    """Assemble the ``execute_command`` return dict.
+
+    Computes ``duration_ms`` and ``finished_at`` uniformly so the timeout
+    and success branches don't drift on the timing fields.
+    """  # NFR-10
     return {
         "state": state,
         "exit_code": exit_code,
-        "stdout_tail": stdout_bytes.decode("utf-8", errors="replace"),
-        "stderr_tail": stderr_bytes.decode("utf-8", errors="replace"),
-        "duration_ms": duration_ms,
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
+        "duration_ms": int((time.monotonic() - started) * 1000),
         "finished_at": _now_iso(),
     }
 
@@ -185,8 +188,7 @@ async def run_task(
 
     transitions = ["pending", "running"]
     outcome = await execute_command(task["command"], timeout=timeout)
-    state = outcome["state"]
-    transitions.append(state)
+    transitions.append(outcome["state"])
 
     repo_results.insert_result(
         None,
@@ -199,13 +201,4 @@ async def run_task(
         finished_at=outcome["finished_at"],
     )
 
-    return {
-        "run_id": run_id,
-        "transitions": transitions,
-        "state": state,
-        "exit_code": outcome["exit_code"],
-        "stdout_tail": outcome["stdout_tail"],
-        "stderr_tail": outcome["stderr_tail"],
-        "duration_ms": outcome["duration_ms"],
-        "finished_at": outcome["finished_at"],
-    }
+    return {"run_id": run_id, "transitions": transitions, **outcome}
