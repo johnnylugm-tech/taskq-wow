@@ -214,7 +214,7 @@ def test_v1_endpoints_401_without_api_key(client):
     Citations: SPEC.md line 103 — 全部 /v1/* 端點要求 X-API-Key header;缺少
     或無效 → HTTP 401 + problem+json; SPEC.md §8 #5 — POST /v1/tasks (無
     X-API-Key) → 401 + problem+json.
-    """  # NFR-01 NFR-09 NFR-10
+    """  # NFR-01 NFR-04 NFR-09 NFR-10
     # Run the request in-process so coverage attributes the hit to require_api_key.
     import asyncio
 
@@ -412,7 +412,7 @@ def test_key_create_prints_plaintext_once():
     Citations: SPEC.md line 105 — `python -m taskq_api key create
     --scope <scope>`,明文只在建立當下印出一次; SPEC.md R3 (risk table) —
     明文只印一次,雜湊儲存.
-    """  # NFR-02 NFR-09 NFR-10
+    """  # NFR-02 NFR-04 NFR-09 NFR-10
     generated_key_prefix = "tk-"
 
     buf = io.StringIO()
@@ -490,7 +490,7 @@ def test_revoked_key_returns_401(client):
 
     Citations: SPEC.md line 106 — revoked_at 非空的金鑰一律視為無效;
     TEST_SPEC §1 FR-03 row 5.
-    """  # NFR-01 NFR-09 NFR-10
+    """  # NFR-01 NFR-04 NFR-09 NFR-10
     import asyncio
 
     api_key_revoc_at_iso = "2026-09-05T00:00:00Z"
