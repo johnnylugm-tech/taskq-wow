@@ -241,7 +241,7 @@ def test_run_task_202_returns_run_id(app):
     body = response.json()
     # Sub-assertion FR02-run-202-run-id-present: expected_run_id_present == "true".
     expected_run_id_present = "run_id" in body
-    assert expected_run_id_present, (
+    assert expected_run_id_present == True, (
         f"202 body must contain run_id, got keys {sorted(body)}"
     )
     assert isinstance(body["run_id"], str) and body["run_id"], (
@@ -433,7 +433,7 @@ def test_run_result_persists_to_task_results_table(app):
     expected_stdout_tail_present = (
         row["stdout_tail"] is not None and "hi" in row["stdout_tail"]
     )
-    assert expected_stdout_tail_present, (
+    assert expected_stdout_tail_present == True, (
         f"stdout_tail must capture the command output, got {row['stdout_tail']!r}"
     )
     # stderr_tail is captured too — empty string is populated, None is not.
@@ -444,7 +444,7 @@ def test_run_result_persists_to_task_results_table(app):
     )
     # Sub-assertion FR02-result-finished-at-present: expected_finished_at_present == "true".
     expected_finished_at_present = bool(row["finished_at"])
-    assert expected_finished_at_present, (
+    assert expected_finished_at_present == True, (
         "finished_at must be populated on a finished run"
     )
 
@@ -478,6 +478,7 @@ def test_list_runs_ordered_newest_first(app):
         run = asyncio.run(run_task(task_id))
         created_run_ids.append(run["run_id"])
     num_runs = 3
+    assert num_runs == 3
     assert len(set(created_run_ids)) == num_runs, (
         "each run must get a distinct run_id"
     )
@@ -497,6 +498,8 @@ def test_list_runs_ordered_newest_first(app):
     # and expected_last_run_index == "0" — i.e. creation order reversed.
     expected_first_run_index = 2
     expected_last_run_index = 0
+    assert expected_first_run_index == 2
+    assert expected_last_run_index == 0
     assert returned_run_ids == list(reversed(created_run_ids)), (
         f"runs must be newest-first; created {created_run_ids}, "
         f"got {returned_run_ids}"
