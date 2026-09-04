@@ -588,3 +588,136 @@ def test_task_state_machine_transitions(app):
         assert set(ALLOWED_TRANSITIONS[terminal]) == set(), (
             f"{terminal!r} is terminal and must have no outgoing transitions"
         )
+
+
+# ---------------------------------------------------------------------------
+# Coverage-gap tests — pin the still-missed branches in api/runs.py and
+# service/runner.py so the per-FR test_coverage dimension clears its 100%
+# threshold (quality_manifest.json → gate_score_overrides.test_coverage).
+# All three are reachable error paths whose contracts are documented in
+# SPEC.md §8 + NP-08 (no existence leak in 403/404 bodies) and SAD.md §3.2
+# (the runner's `LookupError` is the documented signal when the task row
+# is gone before execution). Each test is a fresh in-process ASGI round-trip
+# or a direct ``asyncio.run(execute_command/run_task)`` so pytest-cov
+# attributes the hit to the real handler / service function.
+# ---------------------------------------------------------------------------
+
+
+def test_create_run_endpoint_403_on_non_write_scope(app):
+    """POST /v1/tasks/{id}/run with non-write scope returns 403 + problem+json
+    whose body MUST NOT echo ``task_id`` (NP-08 / FR-04 invariant).
+
+    Covers ``api/runs.py`` line 72 — the missing-branch inside
+    ``create_run_endpoint`` raised when ``scope not in ('write', 'admin')``.
+    The 200/202 happy path in ``test_run_task_202_returns_run_id`` never
+    crosses this guard, so without a dedicated test the branch stays at 0
+    hits and the coverage gate (threshold 100% per
+    ``quality_manifest.json`` ``gate_score_overrides.test_coverage``) blocks
+    the gate.
+
+    Citations: SPEC.md line 105 — scope 不足 → 403, body 不得洩漏資源
+    是否存在; SAD.md §3.1 — authz ordering is the router's responsibility.
+    """  # NFR-02 NFR-09 NFR-10
+    task_id = _seed_task(app, name="scope-deny", command="echo hi")
+
+    response = _call(
+        app,
+        "POST",
+        f"/v1/tasks/{task_id}/run",
+        headers={"x-test-scope": "read"},
+    )
+    assert response.status_code == 403, response.text
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["status"] == 403
+    assert body["type"] == "/errors/forbidden"
+    assert task_id not in response.text, (
+        "403 body must NOT contain the task id (existence leak, NP-08)"
+    )
+
+
+def test_create_run_endpoint_404_on_unknown_task_id(app):
+    """POST /v1/tasks/{missing}/run with write scope returns 404 not 403.
+
+    Covers ``api/runs.py`` line 80 — the missing-branch inside
+    ``create_run_endpoint`` raised when ``repo_tasks.fetch_task`` returns
+    ``None``. This is distinct from AC-2.1's happy path: the scope guard
+    must NOT short-circuit the lookup. A 4xx with problem+json is the
+    contract (FR-10); 200/202 is not an option here.
+
+    Citations: SPEC.md §8 #4 — 422/404/403/409 shapes; SAD.md §3.1 — 404
+    happens after authz passes; FR-10 — 404 body is problem+json.
+    """  # NFR-09 NFR-10
+    missing_id = "task-uuid-does-not-exist-404"
+
+    response = _call(
+        app,
+        "POST",
+        f"/v1/tasks/{missing_id}/run",
+        headers={"x-test-scope": "write"},
+    )
+    assert response.status_code == 404, response.text
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["status"] == 404
+    assert body["type"] == "/errors/not-found"
+
+
+def test_run_task_lookuperror_on_unknown_task_id():
+    """``run_task`` with an unknown ``task_id`` raises ``LookupError``.
+
+    Covers ``service/runner.py`` line 184 — the missing-branch inside
+    ``run_task`` raised when ``repo_tasks.fetch_task`` returns ``None``
+    BEFORE any subprocess is spawned. AC-2.4 / AC-2.6 always seed a real
+    task first, so the guard is never crossed in those tests; without this
+    fixture the line sits at 0 hits and the coverage gate (threshold 100%)
+    blocks the dispatch.
+
+    Citations: SPEC.md §3 FR-02 — task existence is a precondition of
+    execution; SAD.md §3.2 — "look up the task, generate run_id, record
+    pending → running, then ``execute_command``"; TEST_SPEC.md §1 FR-02
+    GREEN TODO — ``run_task`` must propagate the missing-task signal as
+    ``LookupError``.
+    """  # NFR-09 NFR-10
+    missing_id = "task-uuid-runner-missing"
+
+    with pytest.raises(LookupError) as excinfo:
+        asyncio.run(run_task(missing_id))
+    assert missing_id in str(excinfo.value), (
+        f"LookupError message should name the missing task id, got {excinfo.value!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Coverage-gap tests — direct exercise of ``execute_command``'s success path
+# independent of ``run_task`` so the ``done`` branch (state == "done") is
+# attributed to a fresh service-layer hit rather than to the indirect
+# ``run_task`` happy path. This pins the state-outcome mapping
+# (exit_code 0 → "done", non-zero → "failed") the state-machine test only
+# exercises through the ``done`` outcome.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_command_failed_branch_on_non_zero_exit():
+    """``execute_command`` maps a non-zero exit to state="failed".
+
+    Covers the ``exit_code != 0`` branch in ``service/runner.py``'s
+    ``execute_command`` — the GREEN contract specifies state is "done" when
+    ``exit_code == 0`` and "failed" otherwise. ``test_run_task_…happy_path``
+    only triggers the success branch (echo hi), so without this test the
+    "failed" mapping has no direct coverage.
+
+    Citations: SPEC.md line 97 — pending → running → done | failed |
+    timeout; SAD.md §2.5 — ``execute_command`` outcome structure.
+    """  # NFR-09 NFR-10
+    result = asyncio.run(execute_command("false", timeout=5.0))
+    assert result["state"] == "failed", (
+        f"a non-zero exit must end in state 'failed', got {result['state']!r}"
+    )
+    assert result["exit_code"] != 0
+    # The success-half keys must still be populated for failed runs so
+    # downstream consumers see the captured output for diagnostics.
+    assert result["stdout_tail"] is not None
+    assert result["stderr_tail"] is not None
+    assert isinstance(result["duration_ms"], int)
+    assert bool(result["finished_at"])
