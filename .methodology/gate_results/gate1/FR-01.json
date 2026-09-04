@@ -1,0 +1,124 @@
+{
+  "gate": 1,
+  "phase": 3,
+  "fr_id": "FR-01",
+  "overall_score": 100.0,
+  "quality_complete": true,
+  "rounds_used": 1,
+  "breakdown": {
+    "linting": {
+      "score": 100.0,
+      "threshold": 100,
+      "tool_evidence": "All checks passed!\n",
+      "score_source": "framework",
+      "tool_output": ".methodology/gate_evidence/harness_verification/linting_harness.txt"
+    },
+    "type_safety": {
+      "score": 100.0,
+      "threshold": 100,
+      "tool_evidence": "{\n    \"version\": \"1.1.409\",\n    \"time\": \"1788562033627\",\n    \"generalDiagnostics\": [],\n    \"summary\": {\n        \"filesAnalyzed\": 12,\n        \"errorCount\": 0,\n        \"warningCount\": 0,\n        \"informationCount\": 0,\n        \"timeInSec\": 0.511\n    }\n}\n",
+      "score_source": "framework",
+      "tool_output": ".methodology/gate_evidence/harness_verification/type_safety_harness.txt"
+    },
+    "test_coverage": {
+      "score": 100.0,
+      "threshold": 100,
+      "tests_passed": 20,
+      "tests_failed": 0,
+      "tests_skipped": 0,
+      "tool_evidence": "============================= test session starts ==============================\nplatform darwin -- Python 3.11.15, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/johnny/projects/taskq-wow\nconfigfile: pyproject.toml\nplugins: benchmark-5.2.3, cov-7.1.0, anyio-4.15.0\ncollected 20 items\n\n03-development/tests/test_fr01.py ....................                   [100%]\n\n================================ tests coverage ================================\n______________ coverage: platform darwin, python 3.11.15-final-0 _______________\n\nName                                                  Stmts   Miss  Cover\n----------------------------------------------------------------------\n03-development/src/taskq_api/__init__.py                  0      0   100%\n03-development/src/taskq_api/api/__init__.py              0      0   100%\n03-development/src/taskq_api/api/tasks.py                59      0   100%\n03-development/src/taskq_api/config.py                   13     13     0%\n03-development/src/taskq_api/errors.py                    3      3     0%\n03-development/src/taskq_api/models/__init__.py           0      0   100%\n03-development/src/taskq_api/models/task.py              18      0   100%\n03-development/src/taskq_api/repository/__init__.py       0      0   100%\n03-development/src/taskq_api/repository/tasks.py         62      0   100%\n03-development/src/taskq_api/service/__init__.py          0      0   100%\n03-development/src/taskq_api/service/tasks.py            23      0   100%\n----------------------------------------------------------------------\nTOTAL                                                   178     16    91%\n\n============================== 20 passed in 0.28s ==============================\n",
+      "tool_output": ".methodology/gate_evidence/harness_verification/test_coverage_harness_per_fr_FR-01.txt",
+      "coverage_scope": "per_fr",
+      "coverage_scope_fr": "FR-01",
+      "score_source": "framework"
+    },
+    "architecture_constraints": {
+      "score": 100.0,
+      "threshold": 100,
+      "tool_evidence": "Import Linter\nContracts\nAnalyzed 19 files, 20 dependencies.\n-----------------------------------\n\nlayers KEPT\nforbidden-sqlalchemy KEPT\nindependence-config-and-errors KEPT\n\nContracts: 3 kept, 0 broken.\n",
+      "score_source": "framework",
+      "tool_output": ".methodology/gate_evidence/harness_verification/architecture_constraints_harness.txt"
+    }
+  },
+  "enforcer_sha": "f7fb6e5c68d9ca40af9764b8ab3a146cb6c66f22",
+  "enforcer_surface": {
+    "core/quality_gate": "4da3f274983f4f611fa032281e0e55c6dc6a4aed",
+    "harness/harness_bridge.py": "73d748817327cbec2b0b99a436cb2b0561ea527c",
+    "harness/gate_configs": "d91e4c3c9409081ea44b75ae3060f3293fa59cab"
+  },
+  "evidence_digest": {
+    "secrets_scanning::.gitleaks.toml": {
+      "source": ".gitleaks.toml (score-altering exclusions)",
+      "kind": "file",
+      "sha256": "4ee792a8dd8ca8022e0d9f658a30140cb275f083395cff0c5e0d745432f04614",
+      "bytes": 2157,
+      "head": "# Delivered by `init-project` — templates/.gitleaks.toml is the single\n# source; a project's copy is written once and not re-synced (same shape as\n# harness_quality_gate.yml, see core/ci_template.py). SKIP, never overwrite:\n# unlike the CI workflow this file is one projects already hand-author\n# (three corpus projects shipped their own before this template existed),\n# so init-project never touches an existing copy, with or without\n# --overwrite.\n#\n# Round 92. secrets_scanning (tier-1, threshold 100) treats a clean gitleaks\n# run as proof of no secrets. The framework itself writes free-text agent\n# excerpts (test names, coverage summaries) into `.methodology/*.json` and\n# commits them (Round 90: the record has to reach git). generic-api-key's\n# entropy rule fires on names like `test_invalid_api_key_returns_401` —\n# measured on a real project's committed Gate 1 evidence, which blocked P5.\n# Scoped to that ONE rule so a real credential under .methodology/ is still\n# caught by private-key / aws-access-token / github-pat / etc. — verified:\n# a private key planted under .methodology/ is still flagged under this\n# config; a real secret outside .methodology/ is unaffected.\n#\n# The path is `(^|/)\\.methodology...`, not `^\\.methodology...`: two of the"
+    },
+    "test_coverage::pyproject.toml": {
+      "source": "pyproject.toml (score-altering exclusions)",
+      "kind": "file",
+      "sha256": "a9d196dd77e0361648a70f0db04611df743ddbe962ddd99bf343b1b2f0b99903",
+      "bytes": 522,
+      "head": "[build-system]\nrequires = [\"setuptools>=68\", \"wheel\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"taskq-wow\"\nversion = \"0.1.0\"\ndescription = \"HTTP task-queue service (taskq-api round 2 test-bed)\"\nrequires-python = \">=3.11\"\n\n[tool.pytest.ini_options]\n# Make `03-development/src/` importable so `taskq_api.*` resolves without\n# an editable install (Phase-3 development loop). `testpaths` scopes\n# collection to the FR-01 test directory.\ntestpaths = [\"03-development/tests\"]\npythonpath = [\"03-development/src\"]"
+    },
+    "linting": {
+      "source": "tool_evidence (inline)",
+      "kind": "inline",
+      "sha256": "f0d0b1081d9d3ebb26c4c93543053ecdc0a58998f22c071dc4ddb26021b57645",
+      "bytes": 18,
+      "head": "All checks passed!"
+    },
+    "type_safety": {
+      "source": "tool_evidence (inline)",
+      "kind": "inline",
+      "sha256": "15e88792dc08a871b0e1235c7367cec136f8e2736216554237136cb9ce21a93a",
+      "bytes": 250,
+      "head": "{\n    \"version\": \"1.1.409\",\n    \"time\": \"1788562033627\",\n    \"generalDiagnostics\": [],\n    \"summary\": {\n        \"filesAnalyzed\": 12,\n        \"errorCount\": 0,\n        \"warningCount\": 0,\n        \"informationCount\": 0,\n        \"timeInSec\": 0.511\n    }\n}"
+    },
+    "test_coverage": {
+      "source": "tool_evidence (inline)",
+      "kind": "inline",
+      "sha256": "68547b50efb116adc102e2f52c9dad3de7b5b4464de6133eb6d6771c7cebd06c",
+      "bytes": 1711,
+      "head": "============================= test session starts ==============================\nplatform darwin -- Python 3.11.15, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/johnny/projects/taskq-wow\nconfigfile: pyproject.toml\nplugins: benchmark-5.2.3, cov-7.1.0, anyio-4.15.0\ncollected 20 items\n\n03-development/tests/test_fr01.py ....................                   [100%]\n\n================================ tests coverage ================================\n______________ coverage: platform darwin, python 3.11.15-final-0 _______________\n\nName                                                  Stmts   Miss  Cover\n----------------------------------------------------------------------\n03-development/src/taskq_api/__init__.py                  0      0   100%\n03-development/src/taskq_api/api/__init__.py              0      0   100%\n03-development/src/taskq_api/api/tasks.py                59      0   100%\n03-development/src/taskq_api/config.py                   13     13     0%\n03-development/src/taskq_api/errors.py                    3      3     0%\n03-development/src/taskq_api/models/__init__.py           0      0   100%"
+    },
+    "architecture_constraints": {
+      "source": "tool_evidence (inline)",
+      "kind": "inline",
+      "sha256": "ce615fe647cc1e607530e755de191dd1ccee22cca5e2fd15a3a5ea0ef3c78fa6",
+      "bytes": 200,
+      "head": "Import Linter\nContracts\nAnalyzed 19 files, 20 dependencies.\n-----------------------------------\n\nlayers KEPT\nforbidden-sqlalchemy KEPT\nindependence-config-and-errors KEPT\n\nContracts: 3 kept, 0 broken."
+    }
+  },
+  "composite_score": 100.0,
+  "verdict": "PASS",
+  "passed": true,
+  "spec_undelivered": [],
+  "spec_declared": 0,
+  "denominator_provenance": {},
+  "measurement_scope": {
+    "weight_covered": 1.0,
+    "weight_total": 1.0,
+    "weight_artifact_verified": 0,
+    "dimensions_scored": [
+      "architecture_constraints",
+      "linting",
+      "test_coverage",
+      "type_safety"
+    ],
+    "dimensions_unscored": [],
+    "dimensions_artifact_verified": [],
+    "dimensions_declared_absent": [
+      "documentation",
+      "error_handling",
+      "execute_verification_target",
+      "integration_coverage",
+      "license_compliance",
+      "mutation_testing",
+      "performance",
+      "readability",
+      "security",
+      "test_assertion_quality"
+    ]
+  }
+}

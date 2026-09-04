@@ -1,0 +1,56 @@
+{
+  "classified_at": "2026-09-04T22:15:08Z",
+  "cli_tools": [
+    "alembic",
+    "bandit",
+    "coverage",
+    "fastapi",
+    "httpx",
+    "importlinter",
+    "lint-imports",
+    "mutmut",
+    "pip-licenses",
+    "pydantic",
+    "pydantic_settings",
+    "pytest",
+    "pytest-benchmark",
+    "pytest_cov",
+    "python3.11",
+    "radon",
+    "sqlalchemy",
+    "uvicorn"
+  ],
+  "enforcer_sha": "f7fb6e5c68d9ca40af9764b8ab3a146cb6c66f22",
+  "env_vars": {
+    "dev_opt_in": [],
+    "has_default": [
+      "TASKQ_CORS_ORIGINS",
+      "TASKQ_DB_POOL_SIZE",
+      "TASKQ_DB_URL",
+      "TASKQ_DRAIN_TIMEOUT",
+      "TASKQ_HOST",
+      "TASKQ_LOG_FORMAT",
+      "TASKQ_LOG_LEVEL",
+      "TASKQ_MAX_CONCURRENT",
+      "TASKQ_PORT",
+      "TASKQ_RATE_BURST",
+      "TASKQ_RATE_PER_SEC",
+      "TASKQ_TASK_TIMEOUT"
+    ],
+    "mandatory": []
+  },
+  "infra_services": {
+    "docker_compose_services": [],
+    "required": [
+      {
+        "checked_via": "Python sqlite3.connect(tempfile.mkstemp) round-trip SELECT 1",
+        "fix": "Built into Python; no install needed. Default DB per SAD §2 (TASKQ_DB_URL defaults to sqlite:///./taskq.db)",
+        "name": "sqlite",
+        "reachable": true,
+        "type": "SQLite 3 (file-backed)"
+      }
+    ]
+  },
+  "schema_version": 1,
+  "source_sha256": "0e27579a7b1c46e8e246af08ce868c1f1f6412e69e2b01365bfbc181ec0c8deb"
+}
