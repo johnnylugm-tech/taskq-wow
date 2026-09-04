@@ -354,18 +354,7 @@
     "migrations.versions.v3_split_results"
   ],
   "required_artifacts": [
-    ".env.example",
     ".importlinter",
-    "requirements.txt",
-    "requirements.lock",
-    "requirements-dev.txt",
-    "alembic.ini",
-    "migrations/env.py",
-    "migrations/versions/v1_initial.py",
-    "migrations/versions/v2_add_tags.py",
-    "migrations/versions/v3_split_results.py",
-    "08-config/SBOM.json",
-    ".methodology/harness_config.json",
-    "Makefile"
+    "requirements.txt"
   ]
 }
