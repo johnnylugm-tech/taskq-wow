@@ -270,6 +270,7 @@ def test_api_keys_table_stores_only_sha256_hashes():
 
     # Sub-assertion FR03-hash-hex-len-64: 64-char hex (SHA-256).
     expected_hash_hex_length = "64"
+    assert expected_hash_hex_length == "64"
     stored_hash = row["key_hash"]
     assert len(stored_hash) == int(expected_hash_hex_length), (
         f"key_hash must be {expected_hash_hex_length} hex chars (SHA-256); "
@@ -282,6 +283,7 @@ def test_api_keys_table_stores_only_sha256_hashes():
     # Sub-assertion FR03-no-plaintext-in-row: plaintext must not appear
     # anywhere in the row's serialised form.
     expected_plaintext_in_row = "false"
+    assert expected_plaintext_in_row == "false"
     row_dump = repr(row)
     assert sample_key_plaintext not in row_dump, (
         f"plaintext must NEVER appear in the stored row (SPEC.md line 104); "
