@@ -587,3 +587,260 @@ def test_healthz_readyz_no_auth_required(client):
         f"/healthz must ignore a bogus X-API-Key (FR-09); got "
         f"{bogus_response.status_code} {bogus_response.text}"
     )
+
+
+# ---------------------------------------------------------------------------
+# COVERAGE TESTS — exercise every statement in
+# taskq_api/service/auth.py, taskq_api/repository/api_keys.py, and
+# taskq_api/api/dependencies.py so pytest-cov attributes the hit. Every
+# test below is in-process (no subprocess.run) so coverage actually
+# counts (v2.13.0 integration guideline). The Gate-1 test_coverage
+# dimension scores per-FR coverage at 100%; without these, the module
+# stays at the 88.8% reported in
+# .methodology/gate_evidence/harness_verification/test_coverage_harness_per_fr_FR-03.txt
+# (missing 14 lines: auth.py 40, 58; api_keys.py 74, 76, 103, 108, 122,
+# 124, 128; dependencies.py 109, 127, 205; __main__.py 140, 147).
+# `__main__.py` is excluded at the file level via pyproject.toml's
+# `[tool.coverage.run] omit` (entry-point module — escape hatch for
+# the `if __name__ == "__main__":` guard).
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# service/auth.py — cover the TypeError guards on lines 40 and 58.
+# ---------------------------------------------------------------------------
+
+
+def test_hash_api_key_rejects_non_str_plaintext():
+    """service/auth.py line 40 — ``hash_api_key`` raises ``TypeError`` on
+    non-``str`` input (defensive guard around ``plaintext.encode``)."""  # NFR-02 NFR-09
+    with pytest.raises(TypeError):
+        # ``bytes`` is a near-miss for the real attack vector — the
+        # ``str.encode`` call would raise ``AttributeError`` rather than
+        # a clean ``TypeError``, so the guard exists.
+        hash_api_key(123)  # type: ignore[arg-type]
+
+
+def test_hash_api_key_accepts_str_returns_64_hex():
+    """Sanity check: the happy path of ``hash_api_key`` produces a 64-char
+    lowercase hex SHA-256 (covers the return on line 41)."""  # NFR-02 NFR-09
+    digest = hash_api_key("tk-coverage-helper")
+    assert re.fullmatch(r"[0-9a-f]{64}", digest), (
+        f"hash_api_key must return 64-char lowercase hex; got {digest!r}"
+    )
+    # Cross-check against hashlib directly so a future change that
+    # silently swaps the algorithm is caught here.
+    assert digest == hashlib.sha256(b"tk-coverage-helper").hexdigest()
+
+
+def test_compare_api_keys_rejects_non_str_arguments():
+    """service/auth.py line 58 — ``compare_api_keys`` raises ``TypeError``
+    when either argument is not a ``str``. Tested for both positions so
+    a future refactor that swaps the type check cannot regress."""  # NFR-02 NFR-09
+    with pytest.raises(TypeError):
+        compare_api_keys(123, "a" * 64)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        compare_api_keys("x", 123)  # type: ignore[arg-type]
+
+
+def test_compare_api_keys_matches_and_mismatches():
+    """Sanity: ``compare_api_keys`` returns ``True`` for a matching pair
+    and ``False`` for a mismatched one (covers the ``bool(...)`` return
+    on line 63)."""  # NFR-02 NFR-09
+    plaintext = "tk-coverage-compare"
+    stored = hash_api_key(plaintext)
+    assert compare_api_keys(plaintext, stored) is True
+    assert compare_api_keys(plaintext, "f" * 64) is False
+
+
+# ---------------------------------------------------------------------------
+# repository/api_keys.py — cover validation guards (74, 76, 122, 124),
+# the TypeError on line 103, the not-found returns on lines 108 and 128.
+# ---------------------------------------------------------------------------
+
+
+def test_insert_api_key_rejects_empty_plaintext():
+    """api_keys.py line 74 — ``insert_api_key`` raises ``ValueError`` when
+    the plaintext is an empty string (defensive guard against an
+    accidental ``""`` key)."""  # NFR-02 NFR-09
+    with pytest.raises(ValueError):
+        insert_api_key("", scope="write")
+
+
+def test_insert_api_key_rejects_empty_scope():
+    """api_keys.py line 76 — ``insert_api_key`` raises ``ValueError`` when
+    the scope is an empty string (defensive guard — scope is required
+    by SPEC.md line 105)."""  # NFR-02 NFR-09
+    with pytest.raises(ValueError):
+        insert_api_key("tk-non-empty", scope="")
+
+
+def test_fetch_api_key_by_hash_rejects_non_str():
+    """api_keys.py line 103 — ``fetch_api_key_by_hash`` raises ``TypeError``
+    on non-``str`` input (defensive guard)."""  # NFR-02 NFR-09
+    with pytest.raises(TypeError):
+        fetch_api_key_by_hash(123)  # type: ignore[arg-type]
+
+
+def test_fetch_api_key_by_hash_returns_none_for_unknown_hash():
+    """api_keys.py line 108 — ``fetch_api_key_by_hash`` returns ``None``
+    when no row matches the hash (the not-found path that
+    ``require_api_key`` translates into a 401)."""  # NFR-02 NFR-09
+    unknown_hash = "0" * 64  # 64-char hex of zeros — never assigned to a real row.
+    assert fetch_api_key_by_hash(unknown_hash) is None
+
+
+def test_revoke_api_key_rejects_empty_key_id():
+    """api_keys.py line 122 — ``revoke_api_key`` raises ``ValueError``
+    when ``key_id`` is empty (defensive guard)."""  # NFR-09
+    with pytest.raises(ValueError):
+        revoke_api_key("", revoked_at="2026-09-05T00:00:00Z")
+
+
+def test_revoke_api_key_rejects_empty_revoked_at():
+    """api_keys.py line 124 — ``revoke_api_key`` raises ``ValueError``
+    when ``revoked_at`` is empty (defensive guard — the column must
+    be a non-null ISO timestamp per SPEC.md line 106)."""  # NFR-09
+    # First create a real key so the ``key_id`` is non-empty.
+    key_id = insert_api_key("tk-coverage-revoke", scope="write")
+    with pytest.raises(ValueError):
+        revoke_api_key(key_id, revoked_at="")
+
+
+def test_revoke_api_key_returns_false_for_unknown_key_id():
+    """api_keys.py line 128 — ``revoke_api_key`` returns ``False`` when
+    the ``key_id`` is unknown (the not-found path; mirrors the
+    ``fetch_api_key_by_hash`` contract for writes)."""  # NFR-09
+    assert (
+        revoke_api_key(
+            "key-id-that-does-not-exist-00000000", revoked_at="2026-09-05T00:00:00Z"
+        )
+        is False
+    )
+
+
+def test_insert_api_key_persists_scope_and_created_at():
+    """Sanity check: ``insert_api_key`` round-trips the ``scope`` and
+    stamps a non-empty ``created_at`` (covers lines 78–86 happy path
+    including the lock acquisition)."""  # NFR-02 NFR-09
+    plaintext = "tk-coverage-insert"
+    key_id = insert_api_key(plaintext, scope="admin")
+    row = fetch_api_key_by_hash(hash_api_key(plaintext))
+    assert row is not None
+    assert row["key_id"] == key_id
+    assert row["scope"] == "admin"
+    assert row["created_at"], "created_at must be a non-empty ISO timestamp"
+    assert row["revoked_at"] is None, "freshly-inserted rows must start unrevoked"
+
+
+# ---------------------------------------------------------------------------
+# api/dependencies.py — cover the idempotent patch-install return (109),
+# the non-marker HTTPException passthrough (127), and the unknown-hash
+# 401 path in ``require_api_key`` (205).
+# ---------------------------------------------------------------------------
+
+
+def test_install_problem_json_patch_is_idempotent():
+    """dependencies.py line 109 — ``_install_problem_json_patch`` is a
+    no-op on its second call (the ``if _patch_applied: return`` guard).
+
+    The patch was installed once at import time (line 151), so calling
+    the function again hits the idempotent return on line 109. We assert
+    the guard's ``_patch_applied`` flag is still ``True`` afterwards so
+    a future regression that clears the flag is caught here."""  # NFR-10 NFR-11
+    import taskq_api.api.dependencies as _deps
+
+    assert _deps._patch_applied is True, (
+        "the patch should already be installed at import time; "
+        "this test only makes sense after the module has been imported"
+    )
+    # Second call hits line 109 — must be a no-op (no exception, no
+    # re-patching of the fastapi modules).
+    _deps._install_problem_json_patch()
+    assert _deps._patch_applied is True
+
+
+def test_patched_http_exception_handler_passes_non_marker_through(client):
+    """dependencies.py line 127 — the patched ``http_exception_handler``
+    defers to the original FastAPI handler when the HTTPException does
+    NOT carry the ``content-type: application/problem+json`` marker.
+
+    The test mounts a small FastAPI app that raises a plain
+    HTTPException (no marker header) and asserts the response uses
+    FastAPI's default ``application/json`` content-type — the original
+    handler's behaviour, untouched by the FR-03 patch."""  # NFR-10 NFR-11
+    import asyncio
+
+    from fastapi import FastAPI, HTTPException
+    import httpx
+
+    passthrough_app = FastAPI()
+
+    @passthrough_app.get("/non-marker-401")
+    async def non_marker_401() -> dict[str, str]:  # type: ignore[no-untyped-def]
+        # Deliberately omit the ``headers={"content-type": ...}`` so the
+        # patched handler sees no marker and falls through to the
+        # original handler on line 127.
+        raise HTTPException(status_code=401, detail="not us")
+
+    transport = httpx.ASGITransport(app=passthrough_app)
+
+    async def _hit():  # type: ignore[no-untyped-def]
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as http_client:
+            return await http_client.get("/non-marker-401")
+
+    response = asyncio.run(_hit())
+    assert response.status_code == 401
+    # Original handler returns FastAPI's default JSON envelope
+    # (``{"detail": ...}``) with ``application/json``. The patched
+    # handler must NOT have rewritten the body — that is the
+    # passthrough we are asserting.
+    assert response.headers["content-type"].startswith("application/json"), (
+        f"non-marker 401 must use FastAPI's default application/json "
+        f"(passthrough path on line 127); got "
+        f"{response.headers.get('content-type')!r}"
+    )
+    body = response.json()
+    assert body.get("detail") == "not us"
+    # Crucially: the marker content-type must NOT appear — otherwise we
+    # are observing the patched branch, not the passthrough.
+    assert not response.headers["content-type"].startswith(
+        "application/problem+json"
+    ), "non-marker 401 must NOT be rewritten to problem+json"
+
+
+def test_unknown_api_key_returns_401(client):
+    """dependencies.py line 205 — ``require_api_key`` 401s when the
+    presented key hashes to a value with no row in ``api_keys``
+    (distinct from the missing-header 401 on line 201–202; both paths
+    share the same generic body per NFR-02 / SPEC.md line 103).
+
+    This test exercises the unknown-hash branch — the previously
+    uncovered statement at line 205."""  # NFR-01 NFR-02 NFR-09 NFR-10
+    import asyncio
+
+    # ``tk-unknown-but-well-formed-…`` is a syntactically valid key but
+    # is NOT inserted into the store, so the lookup returns ``None``.
+    response = asyncio.run(
+        client(
+            "GET",
+            "/v1/anything",
+            headers={"X-API-Key": "tk-unknown-but-well-formed-coverage-test"},
+        )
+    )
+
+    assert response.status_code == 401, (
+        f"an unknown X-API-Key must 401 (SPEC.md line 103); "
+        f"got {response.status_code} {response.text}"
+    )
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body.get("type") == "/errors/unauthenticated"
+    # NFR-02 — the 401 body MUST NOT echo the unknown plaintext back to
+    # the caller. This is the secret-leak invariant.
+    assert "tk-unknown-but-well-formed-coverage-test" not in response.text, (
+        "401 body for an unknown key must NOT contain the plaintext "
+        "(NFR-02 secret-leak invariant)"
+    )

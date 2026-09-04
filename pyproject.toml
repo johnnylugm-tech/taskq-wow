@@ -14,3 +14,14 @@ requires-python = ">=3.11"
 # collection to the FR-01 test directory.
 testpaths = ["03-development/tests"]
 pythonpath = ["03-development/src"]
+
+[tool.coverage.run]
+# taskq_api/__main__.py is the dedicated entry-point module (`python -m
+# taskq_api`). Its `if __name__ == "__main__":` block is unreachable from
+# tests by definition — the escape-hatch rule from the coverage-fix brief
+# says omit the dedicated entry-point file at the file level rather than
+# sprinkling `# pragma: no cover` on the guard. SAD.md §2.6 forbids
+# duplicating the guard inside api/service layers. Glob patterns are
+# accepted so the omit works whether coverage is invoked from the repo
+# root or from a subdirectory.
+omit = ["*/taskq_api/__main__.py"]
