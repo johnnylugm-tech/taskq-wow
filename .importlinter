@@ -16,6 +16,7 @@ layers =
 name = forbidden-sqlalchemy
 type = forbidden
 source_modules =
+    taskq_api
     taskq_api.api
     taskq_api.service
     taskq_api.models
