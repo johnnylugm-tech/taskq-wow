@@ -59,6 +59,8 @@ test_inventory:
       test_file: tests/integration/test_nfr09.py
   coverage_summary:
     total_test_cases: 4
+    p1_floor_satisfied: true
+    p1_floor_note: "P1 authoritative test IDs per file header (lines 5-6): TC-FR01-01, TC-FR01-02, TC-N02-01, TC-N09-01. See p2_deferred below for the remaining 19 of 22 requirements."
     by_fr:
       FR-01: {tc_count: 2}
       NFR-02: {tc_count: 1}
@@ -67,6 +69,30 @@ test_inventory:
       integration: {count: 2}
       unit: {count: 1}
       static: {count: 1}
+    p2_deferred:
+      status: PENDING
+      deferral_owner: derive_test_cases.md (P2 SAB)
+      unfilled_requirements:
+        - FR-02
+        - FR-03
+        - FR-04
+        - FR-05
+        - FR-06
+        - FR-07
+        - FR-08
+        - FR-09
+        - FR-10
+        - NFR-01
+        - NFR-03
+        - NFR-04
+        - NFR-05
+        - NFR-06
+        - NFR-07
+        - NFR-08
+        - NFR-10
+        - NFR-11
+        - NFR-12
+      note: "Per file header (lines 5-6), derive_test_cases.md P2 fills these via the 7-Question Protocol. The gap above is an explicit deferral, not an omission. P2 SAB MUST either populate or carry as TODO with rationale."
 
 # ── fr_tests / cross_cutting ──────────────────────────────────────────────
 # The name-only view, read by spec_coverage._flatten_test_names (P1 Naming
