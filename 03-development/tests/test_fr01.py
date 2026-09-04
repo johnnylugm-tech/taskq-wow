@@ -109,7 +109,7 @@ def test_fr01_example_integration(client):
 
     TEST_SPEC inputs: task_name="compile"; expected_status="201";
     expected_id_present="true". Sub-assertion FR01-status-201.
-    """
+    """  # NFR-09 NFR-10
     # In-process request body validated by TaskCreate pydantic model (FR-01).
     payload = {"name": "compile", "command": "gcc main.c -o main"}
     # GREEN TODO: client must be authenticated via X-API-Key write-scope header.
@@ -132,7 +132,7 @@ def test_fr01_example_unit(client):
 
     TEST_SPEC inputs: task_name=""; expected_status="422". Sub-assertions
     FR01-task-name-empty-422 and FR01-task-name-422-status.
-    """
+    """  # NFR-11
     payload = {"name": "", "command": "echo hi"}
     response = client.post("/v1/tasks", json=payload)
 
@@ -155,7 +155,7 @@ def test_fr01_get_by_id_returns_full_record(client):
     TEST_SPEC inputs: task_id="task-uuid-001"; expected_status="200";
     expected_field_set="id,command,name,status,created_at".
     Sub-assertions FR01-get-id-200 and FR01-get-field-set-contains-id.
-    """
+    """  # NFR-10
     task_id = "task-uuid-001"
     response = client.get(f"/v1/tasks/{task_id}")
 
@@ -329,7 +329,7 @@ def test_fr01_delete_unknown_id_returns_404_for_missing(client):
     TEST_SPEC inputs: actor_scope="admin"; task_id="task-uuid-missing";
     expected_status="404"; expected_existence_leak="false". Sub-assertions
     FR01-delete-admin-unknown-404 and FR01-delete-admin-no-existence-leak.
-    """
+    """  # NFR-10 NFR-09
     # GREEN TODO: client must carry X-API-Key with admin scope.
     response = client.delete("/v1/tasks/task-uuid-missing")
 
