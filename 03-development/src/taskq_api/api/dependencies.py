@@ -50,13 +50,13 @@ Citations:
 """  # NFR-02 NFR-11
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 
+import fastapi.applications as _fa
+import fastapi.exception_handlers as _feh
 from fastapi import Header
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import Response as StarletteResponse
 
 from taskq_api.repository.api_keys import fetch_api_key_by_hash
 from taskq_api.service.auth import hash_api_key
@@ -79,11 +79,10 @@ _GENERIC_DETAIL = "invalid or missing X-API-Key"
 # every other exception, so the rest of the codebase is unaffected.
 # ---------------------------------------------------------------------------
 
-import fastapi.applications as _fa  # noqa: E402  [FR-03]
-import fastapi.exception_handlers as _feh  # noqa: E402  [FR-03]
-
-_original_http_exception_handler_apps = _fa.http_exception_handler
-_original_http_exception_handler_feh = _feh.http_exception_handler
+# The original FastAPI handler — captured BEFORE we install the FR-03
+# patch below, so the patched version can defer to it for any non-401
+# HTTPException and leave the rest of the app's behaviour untouched.
+_original_http_exception_handler = _fa.http_exception_handler
 _patch_applied = False
 
 
@@ -125,7 +124,7 @@ def _install_problem_json_patch() -> None:
         if content_type != _PROBLEM_CONTENT_TYPE:
             # Not ours — defer to the original FastAPI handler so the
             # rest of the app's behaviour is unchanged.
-            return await _original_http_exception_handler_apps(request, exc)
+            return await _original_http_exception_handler(request, exc)
         body = {
             "type": _PROBLEM_TYPE,
             "title": _PROBLEM_TITLE,

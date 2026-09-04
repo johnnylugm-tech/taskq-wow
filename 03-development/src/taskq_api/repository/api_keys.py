@@ -128,7 +128,3 @@ def revoke_api_key(key_id: str, *, revoked_at: str) -> bool:
             return False
         row["revoked_at"] = revoked_at
         return True
-
-
-# Initialise a clean store at import so the very first test sees no rows.
-_reset_state()
