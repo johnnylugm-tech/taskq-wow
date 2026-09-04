@@ -1,0 +1,33 @@
+{
+  "fr": "ADR.md",
+  "review_status": "APPROVE",
+  "reason": "ADR.md delivers 14 decisions covering stack (ADR-001), 4-tier layering (ADR-002), TaskGroup executor (ADR-003), subprocess safety (ADR-004), SHA-256 + compare_digest auth (ADR-005), scope authz-before-lookup (ADR-006), row-locked rate bucket (ADR-007), N+1 listener (ADR-008), RFC 7807 scrubber (ADR-009), reversible Alembic v3 (ADR-010), pydantic BaseSettings + scrub_db_url (ADR-011), context-managed session (ADR-012), Makefile verify-system (ADR-013), and CancelledError re-raise (ADR-014). Each block carries Status, Context, Decision, Consequences, and Alternatives Considered, with explicit FR/NFR/R/T cross-references that I verified against SAD.md §2.x module tables, SAD §5 SAB high_risk_modules, SAD §6 threat IDs (T-04/T-05/T-06/T-09), SAD §1.1 system verification target, and SRS.md §5.1",
+  "citations": [
+    "02-architecture/adr/ADR.md:34",
+    "02-architecture/adr/ADR.md:81",
+    "02-architecture/adr/ADR.md:134",
+    "02-architecture/adr/ADR.md:180",
+    "02-architecture/adr/ADR.md:221",
+    "02-architecture/adr/ADR.md:260",
+    "02-architecture/adr/ADR.md:301",
+    "02-architecture/adr/ADR.md:339",
+    "02-architecture/adr/ADR.md:377",
+    "02-architecture/adr/ADR.md:420",
+    "02-architecture/adr/ADR.md:460",
+    "02-architecture/adr/ADR.md:497",
+    "02-architecture/adr/ADR.md:542",
+    "02-architecture/adr/ADR.md:588",
+    "02-architecture/SAD.md:293",
+    "02-architecture/SAD.md:839",
+    "02-architecture/SAD.md:548",
+    "02-architecture/SAD.md:284",
+    "01-requirements/SRS.md:532",
+    "01-requirements/SRS.md:575"
+  ],
+  "docs_embedded": [
+    "ADR.md",
+    "SAD.md",
+    "SRS.md"
+  ],
+  "confidence": 0.9
+}

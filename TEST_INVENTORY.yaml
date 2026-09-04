@@ -105,6 +105,68 @@ fr_tests:
       - test_fr01_example_unit
     integration:
       - test_fr01_example_integration
+  FR-02:
+    integration:
+      - test_run_task_202_returns_run_id
+      - test_no_shell_true_in_source_tree
+      - test_runner_timeout_kills_subprocess_no_orphan
+      - test_run_result_persists_to_task_results_table
+      - test_list_runs_ordered_newest_first
+      - test_task_state_machine_transitions
+  FR-03:
+    integration:
+      - test_v1_endpoints_401_without_api_key
+      - test_api_keys_table_stores_only_sha256_hashes
+      - test_key_compare_uses_constant_time
+      - test_key_create_prints_plaintext_once
+      - test_revoked_key_returns_401
+      - test_healthz_readyz_no_auth_required
+  FR-04:
+    integration:
+      - test_scope_hierarchy_inclusion
+      - test_insufficient_scope_403_no_existence_leak
+      - test_all_v1_routes_share_single_auth_dependency
+  FR-05:
+    integration:
+      - test_rate_limit_429_with_retry_after
+      - test_rate_bucket_persists_across_restart_and_uses_row_lock
+      - test_healthz_readyz_exempt_from_rate_limit
+  FR-06:
+    integration:
+      - test_repository_is_only_sqlalchemy_importer
+      - test_request_session_scope_commit_on_success_rollback_on_exception
+      - test_no_sql_string_concatenation_in_source
+      - test_list_endpoint_constant_sql_count_no_n_plus_1
+      - test_engine_pool_size_and_pre_ping_configured
+  FR-07:
+    integration:
+      - test_alembic_upgrade_head_succeeds
+      - test_alembic_downgrade_base_no_residual_tables
+      - test_alembic_v2_adds_tags_and_unique_index
+      - test_alembic_v3_splits_results_with_data_migration
+      - test_migration_round_trip_preserves_sample_data_bytewise
+      - test_migration_files_have_real_downgrade_no_drop_table_shortcuts
+      - test_migration_offline_sql_generation_matches_expectations
+  FR-08:
+    integration:
+      - test_runner_concurrency_capped_at_max_concurrent
+      - test_shutdown_graceful_drain_marks_overdue_interrupted
+      - test_timeout_kills_child_process_no_orphans
+      - test_cancelled_error_propagates_through_exception_handlers
+  FR-09:
+    integration:
+      - test_healthz_200_no_auth
+      - test_readyz_200_when_db_ok_and_migrations_at_head
+      - test_readyz_503_when_db_unreachable
+      - test_readyz_503_when_migration_not_at_head
+      - test_metrics_admin_scope_no_db_url_leak
+  FR-10:
+    integration:
+      - test_all_error_responses_use_problem_json_content_type
+      - test_problem_json_body_has_required_fields
+      - test_500_detail_omits_internals
+      - test_correlation_id_consistent_across_response_and_log
+      - test_error_code_mapping_observed_per_spec_table
 
 cross_cutting:
   security:
