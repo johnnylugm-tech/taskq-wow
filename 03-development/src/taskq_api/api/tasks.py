@@ -18,28 +18,24 @@ Citations:
 """  # NFR-11
 from __future__ import annotations
 
-import re
 from typing import Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
-from taskq_api.models.task import TaskCreate
+from taskq_api.models.task import (
+    _INJECTION_CHARS,
+    _MAX_NAME_LEN,
+    TaskOut,
+)
 from taskq_api.service.tasks import (
     DuplicateNameError,
     create_task as svc_create,
-    delete_task as svc_delete,
     get_task_by_id as svc_get,
     list_tasks as svc_list,
 )
 
 router = APIRouter(tags=["tasks"])
-
-# SPEC.md §8 #16 — injection denylist shared with the service layer for
-# early validation in the router (avoids hitting the service on obvious
-# garbage). Keep in sync with ``taskq_api.service.tasks._INJECTION_CHARS``.
-_INJECTION_CHARS = re.compile(r"[;&|`$\\<>'\"]")
-_MAX_NAME_LEN = 1000
 
 
 def _problem(*, status: int, type_: str, title: str, detail: str) -> JSONResponse:
@@ -62,6 +58,10 @@ def _problem(*, status: int, type_: str, title: str, detail: str) -> JSONRespons
 
 def _validate_create_payload(payload: Optional[dict]) -> Optional[JSONResponse]:
     """Validate the POST body. Returns a 422 problem+json on failure, else ``None``.
+
+    ``TaskCreate`` covers length / non-emptiness; the router keeps the
+    injection-character check here so callers see a uniform problem+json
+    shape (FastAPI's default ValidationError body is not problem+json).
 
     Citations: SPEC.md §3 FR-01 — non-empty / ≤1000 chars / injection
     denylist; SPEC.md §3 FR-01 — violation → 422 + problem+json.
@@ -137,13 +137,7 @@ async def create_task_endpoint(request: Request) -> JSONResponse:
         )
     return JSONResponse(
         status_code=201,
-        content={
-            "id": task["id"],
-            "name": task["name"],
-            "command": task["command"],
-            "status": task["status"],
-            "created_at": task["created_at"],
-        },
+        content=TaskOut(**task).model_dump(),
     )
 
 
@@ -166,13 +160,7 @@ async def get_task_endpoint(task_id: str) -> JSONResponse:
         )
     return JSONResponse(
         status_code=200,
-        content={
-            "id": task["id"],
-            "name": task["name"],
-            "command": task["command"],
-            "status": task["status"],
-            "created_at": task["created_at"],
-        },
+        content=TaskOut(**task).model_dump(),
     )
 
 
@@ -210,16 +198,7 @@ async def list_tasks_endpoint(
     return JSONResponse(
         status_code=200,
         content={
-            "items": [
-                {
-                    "id": t["id"],
-                    "name": t["name"],
-                    "command": t["command"],
-                    "status": t["status"],
-                    "created_at": t["created_at"],
-                }
-                for t in result["items"]
-            ],
+            "items": [TaskOut(**t).model_dump() for t in result["items"]],
             "next_cursor": result["next_cursor"],
         },
     )
@@ -234,12 +213,12 @@ async def delete_task_endpoint(task_id: str) -> JSONResponse:
     §3 FR-01 — non-admin scope → 403 + problem+json. SPEC.md §8 #6 —
     body MUST NOT leak whether the id exists (NP-08 / NFR-02).
 
-    Authz note (Phase-3 GREEN seam): the autouse test fixture in
-    ``test_fr01.py`` short-circuits auth to keep FR-01 isolated from
-    FR-03/04. Phase-4 wires the real ``require_scope`` dependency from
-    ``taskq_api.api.dependencies`` and removes the fixture. Until then
-    we look the task up first so the response code matches the contract
-    (existing → 403 with no id echo; missing → 404 with no id echo).
+    Authz ordering (NP-08): the lookup below determines which response
+    the non-admin caller sees — 404 when the id is unknown (so the body
+    reveals no existence either way) and 403 when the id is known (the
+    scope check denies the operation). The real ``require_scope``
+    dependency from ``taskq_api.api.dependencies`` (FR-03/04) gates
+    before this handler runs once Phase-4 lands.
     """  # NFR-10 NFR-11
     # NP-08 / NFR-02 — neither 403 nor 404 body may echo ``task_id``.
     task = svc_get(task_id)

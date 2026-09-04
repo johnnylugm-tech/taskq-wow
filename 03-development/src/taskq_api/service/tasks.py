@@ -1,8 +1,11 @@
 """[FR-01] Service layer for task CRUD.
 
-This module owns validation, uniqueness checks (NP-05), and the
-service→repository mapping. Routers in ``taskq_api.api.tasks`` stay
-thin (≤40 lines each per NFR-11) and delegate here.
+This module owns the service→repository mapping and translates
+repository-level errors (``ValueError`` on duplicate name) into the
+domain-level ``DuplicateNameError``. Validation rules and the
+``TaskCreate`` schema live in ``taskq_api.models.task``; routers in
+``taskq_api.api.tasks`` stay thin (≤40 lines each per NFR-11) and
+delegate here.
 
 Citations:
 - SPEC.md §3 FR-01 — POST validated by ``TaskCreate`` pydantic model;
@@ -16,19 +19,14 @@ Citations:
 """  # NFR-11
 from __future__ import annotations
 
-import re
 from typing import Optional
 
+from taskq_api.models.task import (
+    _INJECTION_CHARS,  # noqa: F401 — re-exported for routers that import from service
+    _MAX_NAME_LEN,  # noqa: F401 — re-exported for routers that import from service
+    TaskCreate,  # noqa: F401 — re-exported so callers can import from service
+)
 from taskq_api.repository import tasks as repo
-
-# Re-export the pydantic schema so callers (tests, future routers) can
-# ``from taskq_api.service.tasks import TaskCreate`` per the SAB-declared
-# module path in TEST_SPEC.md and the GREEN TODO in test_fr01.py.
-from taskq_api.models.task import TaskCreate, TaskListResponse, TaskOut  # noqa: F401
-
-# SPEC.md §8 #16 — reject shell metacharacters in submitted fields.
-_INJECTION_CHARS = re.compile(r"[;&|`$\\<>'\"]")
-_MAX_NAME_LEN = 1000
 
 
 class DuplicateNameError(Exception):
