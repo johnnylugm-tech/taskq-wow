@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskq-wow"
+version = "0.1.0"
+description = "HTTP task-queue service (taskq-api round 2 test-bed)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+# Make `03-development/src/` importable so `taskq_api.*` resolves without
+# an editable install (Phase-3 development loop). `testpaths` scopes
+# collection to the FR-01 test directory.
+testpaths = ["03-development/tests"]
+pythonpath = ["03-development/src"]
