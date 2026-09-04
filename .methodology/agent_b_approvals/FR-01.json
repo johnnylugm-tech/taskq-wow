@@ -1,30 +1,7 @@
 {
-  "review_status": "REJECT",
-  "reason": "FR-01 spec requires (a) DELETE with admin scope on an existing task succeeds (currently only 403/404 paths tested, no positive 2xx assertion), (b) DELETE cascades to task_results in the same transaction (no assertion checks result-row removal), and (c) default limit is 50 (no test calls GET /v1/tasks without limit and asserts the default). Validation rules, 404 paths, 422 over-limit, cursor-disjoint, and GET-by-id fields all map to clear assertions.",
+  "review_status": "APPROVE",
+  "reason": "FR-01's POST/GET/DELETE surface, validation rules (non-empty/≤1000/injection/unique-name), unknown-id 404, cursor-based pagination, and limit boundary (default 50, >200→422) each map to an assertion in test_fr01.py that fails when violated. One sub-requirement — DELETE cascading to result rows in the same transaction — has no assertion, noted as a gap.",
   "citations": [
-    "03-development/tests/test_fr01.py:119",
-    "03-development/tests/test_fr01.py:122",
-    "03-development/tests/test_fr01.py:140",
-    "03-development/tests/test_fr01.py:162",
-    "03-development/tests/test_fr01.py:166",
-    "03-development/tests/test_fr01.py:169",
-    "03-development/tests/test_fr01.py:186",
-    "03-development/tests/test_fr01.py:190",
-    "03-development/tests/test_fr01.py:211",
-    "03-development/tests/test_fr01.py:215",
-    "03-development/tests/test_fr01.py:236",
-    "03-development/tests/test_fr01.py:243",
-    "03-development/tests/test_fr01.py:254",
-    "03-development/tests/test_fr01.py:273",
-    "03-development/tests/test_fr01.py:277",
-    "03-development/tests/test_fr01.py:280",
-    "03-development/tests/test_fr01.py:309",
-    "03-development/tests/test_fr01.py:314",
-    "03-development/tests/test_fr01.py:336",
-    "03-development/tests/test_fr01.py:340",
-    "03-development/tests/test_fr01.py:342",
-    "03-development/tests/test_fr01.py:379",
-    "03-development/tests/test_fr01.py:393",
     "SPEC.md:79",
     "SPEC.md:83",
     "SPEC.md:84",
@@ -33,52 +10,34 @@
     "SPEC.md:88",
     "SPEC.md:89",
     "SPEC.md:90",
-    "SPEC.md:91"
+    "SPEC.md:91",
+    "03-development/tests/test_fr01.py:119",
+    "03-development/tests/test_fr01.py:140",
+    "03-development/tests/test_fr01.py:162",
+    "03-development/tests/test_fr01.py:186",
+    "03-development/tests/test_fr01.py:211",
+    "03-development/tests/test_fr01.py:251",
+    "03-development/tests/test_fr01.py:254",
+    "03-development/tests/test_fr01.py:273",
+    "03-development/tests/test_fr01.py:311",
+    "03-development/tests/test_fr01.py:338",
+    "03-development/tests/test_fr01.py:376",
+    "03-development/tests/test_fr01.py:381",
+    "03-development/tests/test_fr01.py:418",
+    "03-development/tests/test_fr01.py:432",
+    "03-development/tests/test_fr01.py:488",
+    "03-development/tests/test_fr01.py:501",
+    "03-development/tests/test_fr01.py:528"
   ],
   "docs_embedded": [
     "SPEC.md"
   ],
   "gaps": [
     {
-      "severity": "high",
-      "evidence_type": "real_invention",
-      "canonical_ref": "03-development/tests/test_fr01.py:290",
-      "message": "No assertion tests DELETE /v1/tasks/{id} with admin scope on an existing task returning 2xx; only the negative non-admin→403 and admin+unknown→404 paths are checked. An implementation that500s on a valid admin delete would not be caught.",
-      "fr_id": "FR-01"
-    },
-    {
-      "severity": "high",
-      "evidence_type": "real_invention",
-      "canonical_ref": "03-development/tests/test_fr01.py:458",
-      "message": "FR-01 requires DELETE to remove task_results in the same transaction, but no assertion verifies cascading delete. test_fr01_service_delete_task_returns_true_for_existing only checks the boolean return; an implementation leaving orphaned result rows would still pass.",
-      "fr_id": "FR-01"
-    },
-    {
       "severity": "medium",
-      "evidence_type": "real_invention",
-      "canonical_ref": "03-development/tests/test_fr01.py:223",
-      "message": "Spec states default limit is 50, but no test calls GET /v1/tasks without the limit parameter and asserts the response honours the default. test_fr01_list_pagination_cursor_consistent explicitly passes limit=50.",
-      "fr_id": "FR-01"
-    },
-    {
-      "severity": "medium",
-      "evidence_type": "real_invention",
-      "canonical_ref": "03-development/tests/test_fr01.py:500",
-      "message": "test_fr01_repository_maybe_seed_inner_check_returns exercises internal stub internals (_seeded, _lock, _maybe_seed_synthetic, _store) and double-checked-locking seeding that the FR-01 spec does not require; this is an implementation-level test, not a spec assertion.",
-      "fr_id": "FR-01"
-    },
-    {
-      "severity": "low",
       "evidence_type": "over_interpretation",
-      "canonical_ref": "03-development/tests/test_fr01.py:482",
-      "message": "?status= filter is asserted only at the repository layer (test_fr01_repository_fetch_tasks_page_filters_by_status); no HTTP-level GET /v1/tasks?status=pending assertion verifies the wire contract.",
-      "fr_id": "FR-01"
-    },
-    {
-      "severity": "low",
-      "evidence_type": "over_interpretation",
-      "canonical_ref": "03-development/tests/test_fr01.py:264",
-      "message": "Spec boundary limit=200 is never asserted to succeed (only limit=201→422). A defect capping max at 100 would not be caught.",
+      "canonical_ref": "SPEC.md:86",
+      "message": "DELETE requirement specifies '刪除任務(連同結果列,同一交易)' — delete task AND its result rows in the same transaction. test_fr01.py:381 only verifies the task itself is gone via follow-up GET 404; no assertion verifies that any associated task_results rows are also removed, nor that the delete and cascade share one transaction. A green impl that orphans result rows would pass this test.",
       "fr_id": "FR-01"
     }
   ],
@@ -96,7 +55,7 @@
       "test_fr01_list_pagination_cursor_consistent"
     ],
     "assertion_digests": {
-      "test_fr01_delete_requires_admin_scope": "a37453ddbe30dac2e65833f35189f2d9e51164f4d5abd9dfc768df67933ee16e",
+      "test_fr01_delete_requires_admin_scope": "b19ba9f68983e27cd7bf438a509ffcfd9a814659e46d0a7c899a67e513328fcc",
       "test_fr01_delete_unknown_id_returns_404_for_missing": "bc10ede92f8b1a5e07fbe1b13b3b1c7c9d48ad508d2fa5033c2407e2adc8e7d0",
       "test_fr01_duplicate_name_returns_409": "9f07281dbc1168ddafaadb6de703053642f337e3e9443a861ad492e34b64ef71",
       "test_fr01_example_integration": "9d5fec630ff49a57a666ccca28924c25426374445d88693696b0155e228c9338",
