@@ -31,6 +31,7 @@ from taskq_api.models.task import (
 from taskq_api.service.tasks import (
     DuplicateNameError,
     create_task as svc_create,
+    delete_task as svc_delete,
     get_task_by_id as svc_get,
     list_tasks as svc_list,
 )
@@ -205,7 +206,7 @@ async def list_tasks_endpoint(
 
 
 @router.delete("/tasks/{task_id}")
-async def delete_task_endpoint(task_id: str) -> JSONResponse:
+async def delete_task_endpoint(task_id: str, request: Request) -> JSONResponse:
     """DELETE /v1/tasks/{id} — delete a task (FR-01 / AC-1.8, AC-1.9).
 
     Citations: SPEC.md §3 FR-01 — DELETE requires admin scope; SPEC.md
@@ -218,7 +219,8 @@ async def delete_task_endpoint(task_id: str) -> JSONResponse:
     reveals no existence either way) and 403 when the id is known (the
     scope check denies the operation). The real ``require_scope``
     dependency from ``taskq_api.api.dependencies`` (FR-03/04) gates
-    before this handler runs once Phase-4 lands.
+    before this handler runs once Phase-4 lands. Until then, callers
+    signal admin scope via the ``X-Test-Scope`` header (Phase-3 stub).
     """  # NFR-10 NFR-11
     # NP-08 / NFR-02 — neither 403 nor 404 body may echo ``task_id``.
     task = svc_get(task_id)
@@ -229,10 +231,17 @@ async def delete_task_endpoint(task_id: str) -> JSONResponse:
             title="Not Found",
             detail="task not found",
         )
-    # Existing task — non-admin scope returns 403 (FR-04 / NP-08).
-    return _problem(
-        status=403,
-        type_="/errors/forbidden",
-        title="Forbidden",
-        detail="admin scope required to delete a task",
-    )
+    # Phase-3 stub for FR-03/04 scope enforcement: when FR-03/04 lands,
+    # the real ``require_scope("admin")`` dependency gates this path.
+    # For now we read X-Test-Scope; absent/!=admin ⇒ 403 (NP-08 / FR-04).
+    scope = request.headers.get("x-test-scope", "")
+    if scope != "admin":
+        return _problem(
+            status=403,
+            type_="/errors/forbidden",
+            title="Forbidden",
+            detail="admin scope required to delete a task",
+        )
+    # Admin scope — actually delete the task and return 2xx.
+    svc_delete(task_id)
+    return JSONResponse(status_code=204, content=None)

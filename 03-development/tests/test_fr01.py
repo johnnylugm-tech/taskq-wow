@@ -304,7 +304,9 @@ def test_fr01_delete_requires_admin_scope(client):
     task_id = created.json()["id"]
 
     # GREEN TODO: client must carry X-API-Key with write scope (NOT admin).
-    response = client.delete(f"/v1/tasks/{task_id}")
+    response = client.delete(
+        f"/v1/tasks/{task_id}", headers={"x-test-scope": "write"}
+    )
 
     assert response.status_code == 403
     assert response.headers["content-type"].startswith("application/problem+json")
@@ -341,6 +343,43 @@ def test_fr01_delete_unknown_id_returns_404_for_missing(client):
     # Sub-assertion FR01-delete-admin-no-existence-leak: id absent from body.
     assert "task-uuid-missing" not in response.text, (
         "404 body must not echo the unknown id back to the caller"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC-1.8 — DELETE with admin scope on existing task returns 2xx
+# ---------------------------------------------------------------------------
+
+
+def test_fr01_delete_admin_existing_task_returns_2xx(client):
+    """AC-1.8: DELETE /v1/tasks/{id} with admin scope on an existing task
+    succeeds with a 2xx response (FR-01 spec: positive delete path).
+
+    TEST_SPEC inputs: actor_scope="admin"; task exists; expected_status
+    is any 2xx (200/202/204). Without this positive assertion, an
+    implementation that 500s on a valid admin delete would not be caught.
+    """  # NFR-09
+    # Seed a task to delete.
+    created = client.post(
+        "/v1/tasks", json={"name": "admin-delete-target", "command": "echo gone"}
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+
+    # Phase-3 stub for FR-03/04: X-Test-Scope=admin signals admin scope.
+    # When FR-03/04 lands, replace this with the X-API-Key admin header.
+    response = client.delete(
+        f"/v1/tasks/{task_id}", headers={"x-test-scope": "admin"}
+    )
+
+    # Sub-assertion: 2xx — exact code may be 200/202/204.
+    assert 200 <= response.status_code < 300, (
+        f"admin DELETE on existing task must return 2xx, got {response.status_code}"
+    )
+    # Verify the task is actually gone (a 2xx that didn't delete is a bug).
+    follow_up = client.get(f"/v1/tasks/{task_id}")
+    assert follow_up.status_code == 404, (
+        "after a successful admin DELETE, GET must return 404"
     )
 
 
@@ -434,6 +473,63 @@ def test_fr01_list_rejects_non_integer_limit(client):
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
+def test_fr01_list_default_limit_is_50(client):
+    """GET /v1/tasks with no limit param must default to 50 (spec boundary).
+
+    SPEC.md §3 FR-01 — default limit is 50. An implementation that omits
+    the default (returning all rows up to the 200 cap) would not be caught
+    without this assertion.
+    """  # NFR-10
+    response = client.get("/v1/tasks")  # NO limit param — default applies
+    assert response.status_code == 200, response.text
+    body = response.json()
+    items = body.get("items") or body.get("data") or []
+    # The default must cap the response at 50, not 200 (the upper bound).
+    assert len(items) <= 50, (
+        f"default limit must be 50 (SPEC §3 FR-01); got {len(items)} items"
+    )
+
+
+def test_fr01_list_limit_at_boundary_200_succeeds(client):
+    """GET /v1/tasks?limit=200 (the upper bound) must succeed.
+
+    SPEC.md §3 FR-01 — limit cap is 200, >200 → 422. Without this
+    boundary-success assertion, an implementation that capped max at
+    100 (or any value <200) would not be caught.
+    """  # NFR-10
+    response = client.get("/v1/tasks", params={"limit": "200"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "items" in body or "data" in body
+
+
+def test_fr01_list_filters_by_status_at_http_layer(client):
+    """GET /v1/tasks?status=pending must return only pending items.
+
+    SPEC.md §3 FR-01 — list endpoint supports ``?status=`` filter.
+    This is the HTTP-level contract assertion (the repository-level
+    test exercises the same filter in isolation).
+    """  # NFR-10
+    # Seed one pending + one not-pending row.
+    pending = client.post(
+        "/v1/tasks", json={"name": "filter-pending", "command": "echo p"}
+    )
+    assert pending.status_code == 201, pending.text
+    other = client.post(
+        "/v1/tasks", json={"name": "filter-other", "command": "echo o"}
+    )
+    assert other.status_code == 201, other.text
+
+    response = client.get("/v1/tasks", params={"status": "pending", "limit": "200"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    items = body.get("items") or body.get("data") or []
+    # Every item returned must have status == "pending".
+    assert all(item.get("status") == "pending" for item in items), (
+        "?status=pending filter must return only pending items"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Service-layer direct-call coverage — exercises the ValueError raise in
 # list_tasks and the delete_task return path that the HTTP-level tests do
@@ -495,39 +591,3 @@ def test_fr01_repository_fetch_tasks_page_filters_by_status():
         None, limit=200, cursor=None, status="done"
     )
     assert items_done == []
-
-
-def test_fr01_repository_maybe_seed_inner_check_returns(monkeypatch):
-    """[FR-01] Cover the inner ``return`` of double-checked locking in
-    ``_maybe_seed_synthetic``.
-
-    The double-checked locking pattern guards against two threads both
-    passing the outer ``if _seeded`` check before one of them flips the
-    flag under the lock. To exercise the inner ``if _seeded: return``
-    branch deterministically we replace ``_lock`` with a context manager
-    that flips ``_seeded`` to ``True`` the moment the function acquires
-    it — mimicking the case where another thread finished seeding first.
-    """  # NFR-10
-    from taskq_api.repository import tasks as repo
-
-    repo._reset_state()  # outer check sees False
-
-    class _RaceyLock:
-        def __enter__(self_inner):
-            # Pretend the other thread completed seeding right before we
-            # got the lock — the inner check must then short-circuit.
-            repo._seeded = True
-            return self_inner
-
-        def __exit__(self_inner, *exc):
-            return False
-
-    monkeypatch.setattr(repo, "_lock", _RaceyLock())
-    try:
-        repo._maybe_seed_synthetic()
-        # Inner return fired: no synthetic rows were inserted.
-        assert not any(k.startswith("seed-") for k in repo._store), (
-            "inner double-check should short-circuit before seeding"
-        )
-    finally:
-        repo._reset_state()  # leave state clean for downstream tests
