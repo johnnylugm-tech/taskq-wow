@@ -23,6 +23,15 @@ forbidden_modules =
     sqlalchemy
 allow_indirect_imports = True
 
+[importlinter:contract:composition-root]
+name = composition-root
+type = forbidden
+source_modules =
+    taskq_api.__main__
+forbidden_modules =
+    sqlalchemy
+allow_indirect_imports = True
+
 [importlinter:contract:independence-config-and-errors]
 name = independence-config-and-errors
 type = independence
