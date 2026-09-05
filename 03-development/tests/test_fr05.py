@@ -54,12 +54,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import inspect
 import io
 import re
 from pathlib import Path
 
 import pytest
+from fastapi.exceptions import HTTPException
 
 
 # ---------------------------------------------------------------------------
@@ -690,3 +692,348 @@ def test_healthz_readyz_exempt_from_rate_limit(fr05_client, fr05_actor_state):
         f"got {len(bad_healthz)} non-200 responses when the /v1/* "
         f"limiter was demonstrably active."
     )
+
+
+# ---------------------------------------------------------------------------
+# Coverage-driven tests — exercises lines the three AC tests above don't hit.
+#
+# The AC tests (1, 2, 3) deliberately monkey-patch ``require_api_key`` away
+# so they can pin down the rate-limit logic in isolation. That leaves the
+# REAL ``require_api_key`` / ``require_scope`` bodies, the validation
+# branches in ``rate_buckets`` / ``RateLimiter.__init__``, and the patch
+# machinery in ``dependencies`` uncovered. The tests below drive each of
+# those branches directly so the Gate-1 ``test_coverage`` dimension
+# reaches the 80% threshold without sprinkling ``# pragma: no cover``
+# on anything except the ``except BaseException`` cleanup path that the
+# allowlist permits.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_api_keys_store_for_fr05_coverage():
+    """Reset the api_keys in-memory store before each coverage test.
+
+    FR-05 coverage tests seed api_keys rows via ``insert_api_key`` and
+    ``revoke_api_key`` to exercise the real ``require_api_key`` body
+    (the AC tests above bypass it via monkey-patch, so the real path
+    would otherwise be untested in this file). Function-scoped +
+    autouse so a row created in one test cannot affect another
+    (v2.13.0: no shared mutable state across cases).
+    """  # NFR-09 NFR-10
+    import taskq_api.repository.api_keys as _api_keys_repo
+
+    reset = getattr(_api_keys_repo, "_reset_state", None)
+    if reset is not None:
+        reset()
+    yield
+
+
+# ---------------------------------------------------------------------------
+# Coverage — service/rate_limit.py lines 85 + 87 (RateLimiter __init__ guards)
+# ---------------------------------------------------------------------------
+
+
+def test_rate_limiter_rejects_non_positive_capacity_and_refill():
+    """service/rate_limit.py: lines 84-87 — RateLimiter validates each knob.
+
+    The constructor must reject non-numeric / non-positive values for
+    both ``capacity`` and ``refill_per_sec`` so the bucket can never
+    be constructed in a broken state. Each failure mode is asserted
+    independently so a future regression pinpoints which knob is wrong.
+    """  # NFR-09 NFR-10
+    # capacity: not a number
+    with pytest.raises(ValueError, match="capacity must be a positive number"):
+        RateLimiter(capacity="not-a-number", refill_per_sec=5)
+    # capacity: zero
+    with pytest.raises(ValueError, match="capacity must be a positive number"):
+        RateLimiter(capacity=0, refill_per_sec=5)
+    # capacity: negative
+    with pytest.raises(ValueError, match="capacity must be a positive number"):
+        RateLimiter(capacity=-1.0, refill_per_sec=5)
+
+    # refill_per_sec: not a number
+    with pytest.raises(
+        ValueError, match="refill_per_sec must be a positive number"
+    ):
+        RateLimiter(capacity=5, refill_per_sec="bad")
+    # refill_per_sec: zero
+    with pytest.raises(
+        ValueError, match="refill_per_sec must be a positive number"
+    ):
+        RateLimiter(capacity=5, refill_per_sec=0)
+    # refill_per_sec: negative
+    with pytest.raises(
+        ValueError, match="refill_per_sec must be a positive number"
+    ):
+        RateLimiter(capacity=5, refill_per_sec=-2.0)
+
+
+# ---------------------------------------------------------------------------
+# Coverage — repository/rate_buckets.py lines 68 + 172 + 174 (input guards)
+# ---------------------------------------------------------------------------
+
+
+def test_rate_buckets_rejects_invalid_key_id_tokens_and_refill_at():
+    """repository/rate_buckets.py: lines 67-68, 171-174 — input validation.
+
+    Every public entry point must reject a non-empty ``key_id``, a
+    non-numeric ``tokens``, and a non-empty ``last_refill_at`` so the
+    persisted store can never receive garbage that the SQL phase would
+    not accept either. Each branch is asserted independently.
+    """  # NFR-09 NFR-10
+    valid_key = "key-uuid-fr05-coverage"
+    valid_iso = "2024-01-01T00:00:00+00:00"
+
+    # Line 68 — empty / non-str key_id on fetch_bucket
+    with pytest.raises(ValueError, match="key_id must be a non-empty str"):
+        fetch_bucket("")
+    with pytest.raises(ValueError, match="key_id must be a non-empty str"):
+        fetch_bucket(None)  # type: ignore[arg-type]
+
+    # Line 68 — empty key_id on upsert_bucket
+    with pytest.raises(ValueError, match="key_id must be a non-empty str"):
+        upsert_bucket("", tokens=1.0, last_refill_at=valid_iso)
+
+    # Line 172 — tokens must be a number
+    with pytest.raises(TypeError, match="tokens must be a number"):
+        upsert_bucket(valid_key, tokens="not-a-number", last_refill_at=valid_iso)
+
+    # Line 174 — last_refill_at must be a non-empty str
+    with pytest.raises(
+        ValueError, match="last_refill_at must be a non-empty str"
+    ):
+        upsert_bucket(valid_key, tokens=1.0, last_refill_at="")
+    with pytest.raises(
+        ValueError, match="last_refill_at must be a non-empty str"
+    ):
+        upsert_bucket(
+            valid_key, tokens=1.0, last_refill_at=None  # type: ignore[arg-type]
+        )
+
+
+# ---------------------------------------------------------------------------
+# Coverage — api/dependencies.py lines 215-222 (require_api_key body)
+# ---------------------------------------------------------------------------
+
+
+def test_require_api_key_raises_401_when_header_missing():
+    """api/dependencies.py: line 215-216 — missing X-API-Key → 401.
+
+    The very first guard in ``require_api_key`` raises 401 without
+    consulting the repository at all (no hash lookup, no quota cost).
+    The body detail MUST stay the constant "invalid or missing X-API-Key"
+    so the 401 body cannot distinguish "no header" from "unknown hash"
+    (NP-08). The patched handler renders it as RFC 7807.
+    """  # NFR-02 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    with pytest.raises(HTTPException) as exc_info:
+        deps.require_api_key(x_api_key=None)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "invalid or missing X-API-Key"
+
+
+def test_require_api_key_raises_401_for_unknown_key():
+    """api/dependencies.py: lines 217-220 — unknown hash → 401.
+
+    Drives the ``fetch_api_key_by_hash(...)`` lookup against an
+    api_keys table with no matching row. The dependency MUST collapse
+    "unknown hash" with "missing header" into the same constant 401
+    detail (NP-08 — never leak whether the presented plaintext
+    matched anything).
+    """  # NFR-02 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    with pytest.raises(HTTPException) as exc_info:
+        deps.require_api_key(x_api_key="never-inserted-plaintext")
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "invalid or missing X-API-Key"
+
+
+def test_require_api_key_raises_401_for_revoked_key():
+    """api/dependencies.py: lines 220-221 — revoked_at non-empty → 401.
+
+    Inserts a row, stamps ``revoked_at`` via the FR-03 ``revoke_api_key``
+    seam, then presents the same plaintext. The dependency MUST reject
+    with the same constant 401 detail as "unknown hash" (SPEC.md line
+    106 — revoked is treated as invalid; NP-08 — body never discloses
+    why the key was rejected).
+    """  # NFR-02 NFR-10
+    import taskq_api.api.dependencies as deps
+    import taskq_api.repository.api_keys as api_keys_repo
+
+    plaintext = "fr05-coverage-revoked-key"
+    api_keys_repo.insert_api_key(plaintext, scope="read")
+    revoked_at_iso = "2024-01-01T00:00:00+00:00"
+    # The seed above hashed the plaintext; the row is keyed by key_id.
+    # Find the inserted key_id via the seeded row's hash so revoke lands
+    # on the right id.
+    target_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    seeded_row = api_keys_repo.fetch_api_key_by_hash(target_hash)
+    assert seeded_row is not None, "seed must have produced a row"
+    api_keys_repo.revoke_api_key(seeded_row["key_id"], revoked_at=revoked_at_iso)
+
+    with pytest.raises(HTTPException) as exc_info:
+        deps.require_api_key(x_api_key=plaintext)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "invalid or missing X-API-Key"
+
+
+def test_require_api_key_returns_row_on_success():
+    """api/dependencies.py: line 222 — happy path returns the row dict.
+
+    Inserts an api_keys row, presents the plaintext, and asserts the
+    returned dict carries the inserted ``scope`` + a non-empty
+    ``key_id`` (the row shape ``require_rate_limit`` consumes).
+    """  # NFR-09 NFR-10
+    import taskq_api.api.dependencies as deps
+    import taskq_api.repository.api_keys as api_keys_repo
+
+    plaintext = "fr05-coverage-valid-key"
+    expected_key_id = api_keys_repo.insert_api_key(plaintext, scope="write")
+
+    row = deps.require_api_key(x_api_key=plaintext)
+    assert row["key_id"] == expected_key_id
+    assert row["scope"] == "write"
+    assert row["revoked_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# Coverage — api/dependencies.py lines 254-263 (require_scope body)
+# ---------------------------------------------------------------------------
+
+
+def test_require_scope_raises_403_when_user_lacks_required_scope():
+    """api/dependencies.py: lines 254-263 — insufficient scope → 403.
+
+    The factory builds an inner dependency that compares the row's
+    ``scope`` against the required rank (read ⊂ write ⊂ admin). A
+    ``read``-scoped user requesting an ``admin`` route MUST get 403
+    with the constant detail "forbidden" (NP-08 / SPEC.md line 112).
+    """  # NFR-02 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    dep = deps.require_scope("admin")
+    with pytest.raises(HTTPException) as exc_info:
+        dep(user={"key_id": "k", "scope": "read"})
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "forbidden"
+
+
+def test_require_scope_returns_user_when_scope_sufficient():
+    """api/dependencies.py: line 261 — sufficient scope → return the row.
+
+    Hits the success path of ``require_scope``. A ``write`` row
+    accessing a ``read`` route MUST return the row unmodified so the
+    handler can read ``key_id`` / ``scope`` if needed.
+    """  # NFR-09 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    dep = deps.require_scope("read")
+    row = {"key_id": "k", "scope": "write"}
+    assert dep(user=row) is row
+
+
+# ---------------------------------------------------------------------------
+# Coverage — api/dependencies.py line 329 (_authenticate x_api_key branch)
+# ---------------------------------------------------------------------------
+
+
+def test_authenticate_passes_x_api_key_when_dependency_signature_supports_it(
+    monkeypatch,
+):
+    """api/dependencies.py: line 329 — _authenticate dispatches by signature.
+
+    When the (possibly monkey-patched) ``require_api_key`` accepts an
+    ``x_api_key`` keyword argument, ``_authenticate`` MUST forward the
+    incoming header value to it (line 329). This guards the FR-05
+    dependency against signature drift: a future migration that
+    drops ``x_api_key`` from the dependency falls through to the
+    no-arg branch instead of crashing.
+    """  # NFR-09 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    seen: dict = {}
+
+    def fake_dep(*, x_api_key):  # signature accepts x_api_key
+        seen["x_api_key"] = x_api_key
+        return {"key_id": "abc", "scope": "read"}
+
+    monkeypatch.setattr(deps, "require_api_key", fake_dep)
+    result = deps._authenticate(x_api_key="my-token")
+    assert result == {"key_id": "abc", "scope": "read"}
+    assert seen["x_api_key"] == "my-token"
+
+
+# ---------------------------------------------------------------------------
+# Coverage — api/dependencies.py lines 362-367 (require_rate_limit guards)
+# ---------------------------------------------------------------------------
+
+
+def test_require_rate_limit_raises_401_when_user_row_lacks_key_id(monkeypatch):
+    """api/dependencies.py: lines 362-367 — defensive empty key_id → 401.
+
+    The ``require_rate_limit`` dependency trusts ``require_api_key`` to
+    return a row with a non-empty ``key_id`` (the FR-03 row contract),
+    but defends against a malformed row by raising 401 if the field
+    is missing or empty — there is no bucket to charge. This branch
+    is "unreachable in normal operation" but is reachable from a
+    misbehaving / future stub; the contract test pins it down.
+    """  # NFR-02 NFR-09 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    def fake_dep():
+        # Empty key_id triggers the defensive branch.
+        return {"scope": "read", "key_id": ""}
+
+    monkeypatch.setattr(deps, "require_api_key", fake_dep)
+
+    with pytest.raises(HTTPException) as exc_info:
+        deps.require_rate_limit(x_api_key="any-value")
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "invalid or missing X-API-Key"
+
+
+# ---------------------------------------------------------------------------
+# Coverage — api/dependencies.py line 156 (_install_problem_json_patch idempotent)
+# ---------------------------------------------------------------------------
+
+
+def test_install_problem_json_patch_is_idempotent():
+    """api/dependencies.py: line 156 — _install_problem_json_patch is a no-op
+    after the first invocation.
+
+    The module-level guard ``_patch_applied`` makes a second call a
+    no-op (returns on line 156). Asserting the flag stays True after
+    the second call catches a regression that resets the flag and
+    double-patches FastAPI's exception handler.
+    """  # NFR-09 NFR-10
+    import taskq_api.api.dependencies as deps
+
+    assert deps._patch_applied is True  # already patched at import time
+    # Calling again must NOT raise and must NOT flip the flag back.
+    deps._install_problem_json_patch()
+    assert deps._patch_applied is True
+
+
+# ---------------------------------------------------------------------------
+# Coverage — api/dependencies.py line 122 (patched handler passthrough)
+# ---------------------------------------------------------------------------
+
+
+def test_patched_handler_passes_non_marker_exception_to_original():
+    """api/dependencies.py: lines 121-122 — non-marker exceptions fall through.
+
+    The patched handler MUST defer to the original FastAPI handler when
+    the exception does not carry the problem+json marker header
+    (NP-08 invariant: a 401 from a non-FR-03/04/05 source still renders
+    normally instead of being re-shaped into a problem+json envelope).
+    """  # NFR-09 NFR-10
+    import asyncio
+
+    import taskq_api.api.dependencies as deps
+
+    plain_exc = HTTPException(status_code=418, detail="i-am-a-teapot")
+    # No "content-type" marker header → passthrough on line 122.
+    response = asyncio.run(deps._patched_http_exception_handler(None, plain_exc))
+    assert response.status_code == 418
