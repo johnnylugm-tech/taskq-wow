@@ -50,7 +50,7 @@ Citations:
 """  # NFR-02 NFR-11
 from __future__ import annotations
 
-from typing import Optional
+from typing import NoReturn, Optional
 
 import fastapi.applications as _fa
 import fastapi.exception_handlers as _feh
@@ -82,7 +82,13 @@ _GENERIC_DETAIL = "invalid or missing X-API-Key"
 # The original FastAPI handler — captured BEFORE we install the FR-03
 # patch below, so the patched version can defer to it for any non-401
 # HTTPException and leave the rest of the app's behaviour untouched.
-_original_http_exception_handler = _fa.http_exception_handler
+#
+# Accessed via ``getattr`` so pyright's ``reportPrivateImportUsage`` does
+# not flag ``http_exception_handler`` (which FastAPI does not export from
+# ``fastapi.applications``) — the attribute is reachable at runtime via
+# the ``from .exception_handlers import http_exception_handler`` line at
+# the top of ``fastapi.applications``.
+_original_http_exception_handler = getattr(_fa, "http_exception_handler")
 _patch_applied = False
 
 
@@ -138,7 +144,12 @@ def _install_problem_json_patch() -> None:
             media_type=_PROBLEM_CONTENT_TYPE,
         )
 
-    _fa.http_exception_handler = _patched_http_exception_handler
+    # ``setattr`` (vs direct attribute assignment) bypasses pyright's
+    # ``reportPrivateImportUsage`` for ``http_exception_handler`` — the
+    # attribute is reachable at runtime via ``fastapi.applications``'s
+    # top-level ``from .exception_handlers import http_exception_handler``
+    # binding but is not in FastAPI's ``__all__``.
+    setattr(_fa, "http_exception_handler", _patched_http_exception_handler)
     _feh.http_exception_handler = _patched_http_exception_handler
     # NOTE: FastAPI copies the bound function into ``self.exception_handlers``
     # at ``FastAPI.__init__`` time, so test apps constructed AFTER our
@@ -156,13 +167,18 @@ _install_problem_json_patch()
 # ---------------------------------------------------------------------------
 
 
-def _unauthorized() -> None:
+def _unauthorized() -> NoReturn:
     """Raise a 401 carrying the problem+json marker.
 
     The marker header (``content-type: application/problem+json``) is
     what the patched exception handler keys off — it is the only signal
     that distinguishes our 401s from any other HTTPException in the
     app, so the patch is strictly opt-in.
+
+    The ``NoReturn`` annotation lets static type checkers narrow the
+    optional types (``x_api_key: str | None``, ``row: dict | None``)
+    after a call site so we don't need redundant ``cast``/``assert``
+    boilerplate in ``require_api_key``.
 
     Citations: SPEC.md line 103 — 缺少或無效 → 401 + problem+json;
     TEST_SPEC.md §1 FR-03 row 1 — type ``/errors/unauthenticated``.

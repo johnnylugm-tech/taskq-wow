@@ -29,12 +29,18 @@ Citations:
 """  # NFR-02 NFR-04 NFR-11
 from __future__ import annotations
 
+import hashlib
 import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from taskq_api.service.auth import hash_api_key
+# NOTE: this module MUST NOT import from ``taskq_api.service`` — the SAB
+# layer contract in ``.importlinter`` reserves ``service`` as a layer
+# above the persistence boundary. SHA-256 is a one-liner over ``hashlib``
+# so we inline it here instead of depending on ``service.auth.hash_api_key``;
+# ``service.auth`` keeps its hash helper for callers in higher layers
+# (the FastAPI dependency in ``api.dependencies`` and the CLI).
 
 _lock = threading.Lock()
 _store: dict[str, dict] = {}
@@ -77,7 +83,7 @@ def insert_api_key(plaintext: str, *, scope: str) -> str:
     key_id = str(uuid.uuid4())
     row = {
         "key_id": key_id,
-        "key_hash": hash_api_key(plaintext),
+        "key_hash": hashlib.sha256(plaintext.encode("utf-8")).hexdigest(),
         "scope": scope,
         "created_at": _now_iso(),
         "revoked_at": None,
