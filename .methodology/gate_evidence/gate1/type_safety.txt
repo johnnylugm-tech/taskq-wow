@@ -1,0 +1,30 @@
+{
+    "version": "1.1.409",
+    "time": "1788577709681",
+    "generalDiagnostics": [
+        {
+            "file": "/Users/johnny/projects/taskq-wow/03-development/src/taskq_api/api/health.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"head\" for class \"ScriptDirectory\"\n  Attribute \"head\" is unknown",
+            "range": {
+                "start": {
+                    "line": 128,
+                    "character": 56
+                },
+                "end": {
+                    "line": 128,
+                    "character": 60
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        }
+    ],
+    "summary": {
+        "filesAnalyzed": 30,
+        "errorCount": 1,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 1.169
+    }
+}
+

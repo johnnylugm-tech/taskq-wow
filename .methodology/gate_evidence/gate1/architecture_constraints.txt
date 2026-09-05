@@ -1,0 +1,32 @@
+[1m=============[0m
+[1mImport Linter[0m
+[1m=============[0m
+[22m[0m
+[1m---------[0m
+[1mContracts[0m
+[1m---------[0m
+[22m[0m
+[1mAnalyzed 48 files, 95 dependencies.[0m
+[1m-----------------------------------[0m
+[22m[0m
+[22mlayers [0m[32m[22mKEPT[0m[33m[22m[0m[22m[0m
+[22mforbidden-sqlalchemy [0m[31m[22mBROKEN[0m[33m[22m[0m[22m[0m
+[22mcomposition-root [0m[32m[22mKEPT[0m[33m[22m[0m[22m[0m
+[22mpackage-root [0m[32m[22mKEPT[0m[33m[22m[0m[22m[0m
+[22mindependence-config-and-errors [0m[32m[22mKEPT[0m[33m[22m[0m[22m[0m
+[22m[0m
+[22mContracts: 4 kept, 1 broken.[0m
+[22m[0m
+[22m[0m
+[31m[1m----------------[0m
+[31m[1mBroken contracts[0m
+[31m[1m----------------[0m
+[22m[0m
+[31m[1mforbidden-sqlalchemy[0m
+[31m[1m--------------------[0m
+[22m[0m
+[31m[1mtaskq_api.api is not allowed to import sqlalchemy:[0m
+[22m[0m
+[31m[22m-   taskq_api.api.health -> sqlalchemy (l.74)[0m
+[22m[0m
+[22m[0m
