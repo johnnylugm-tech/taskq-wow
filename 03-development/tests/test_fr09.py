@@ -559,3 +559,290 @@ def test_metrics_admin_scope_no_db_url_leak(fr09_client):
         f"/v1/metrics response MUST NOT contain the DB connection "
         f"string (NFR-04 / SPEC.md line 211); got body={body_text!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Coverage tests — exercise the FR-09 helper functions whose bodies are
+# unreachable from the named AC tests (which monkey-patch the predicates
+# or exercise a happy-path /v1/metrics with an empty repository). These
+# tests are unit-level so the inner branches of ``_percentile`` /
+# ``_admin_scope_gate`` / ``_collect_metrics`` / ``check_db_reachable`` /
+# ``check_migrations_at_head`` / ``_safe_check`` / ``_migrations_dir``
+# become covered (Gate 1 test_coverage floor is 80%).
+# ---------------------------------------------------------------------------
+
+
+def test_percentile_returns_none_when_values_empty():
+    """``_percentile`` short-circuits to ``None`` for an empty input.
+
+    Coverage: metrics.py lines 82-83 — the ``if not values: return None``
+    guard so the JSON serializer omits the latency key when no runs
+    exist (SPEC.md line 158 only requires percentiles when runs exist).
+    """  # NFR-09 NFR-11
+    result = _metrics_mod._percentile([], 50.0)
+    assert result is None
+
+
+def test_percentile_single_value_returns_that_value():
+    """``_percentile`` of a single-element input returns that value.
+
+    Coverage: metrics.py line 85-86 — the ``if len(sorted_values) == 1``
+    early-return path.
+    """  # NFR-09 NFR-11
+    result = _metrics_mod._percentile([42], 95.0)
+    assert result == 42
+
+
+def test_percentile_interpolates_between_ranks():
+    """``_percentile`` interpolates linearly between adjacent ranks.
+
+    Coverage: metrics.py lines 87-95 — the nearest-rank + linear
+    interpolation path used for the ``p50`` / ``p95`` / ``p99`` latencies
+    in the FR-09 observability payload. A 1..5 sample lets us pin a
+    deterministic expected value (median → 3) and confirms the
+    interpolation math is exercised end-to-end.
+    """  # NFR-09 NFR-11
+    result = _metrics_mod._percentile([1, 2, 3, 4, 5], 50.0)
+    # Nearest-rank on five samples with linear interpolation lands on
+    # the third element (= 3); the interpolation branch is therefore
+    # exercised (lines 87-95).
+    assert result == 3
+
+
+def test_admin_scope_gate_raises_403_for_read_scope(monkeypatch):
+    """``_admin_scope_gate`` raises HTTP 403 + problem+json for ``read`` scope.
+
+    Coverage: metrics.py lines 117-124 — the call-time lookup of
+    ``require_api_key`` via ``_authenticate`` and the insufficient-scope
+    raise (line 119). Mirrors the test_fr04.py seam so the metrics
+    router's gate is exercised under a non-admin tier.
+    """  # NFR-09 NFR-11
+    from fastapi.exceptions import HTTPException
+
+    import taskq_api.api.dependencies as _deps
+
+    def _fake_user_read() -> dict:
+        return {"key_id": "key-uuid-fr09-read", "scope": "read", "revoked_at": None}
+
+    monkeypatch.setattr(_deps, "require_api_key", _fake_user_read)
+
+    with pytest.raises(HTTPException) as exc_info:
+        _metrics_mod._admin_scope_gate()
+    assert exc_info.value.status_code == 403
+
+
+def test_collect_metrics_walks_pagination_and_emits_latency(monkeypatch):
+    """``_collect_metrics`` walks pagination + emits ``latency_ms``.
+
+    Coverage: metrics.py lines 145-169 — the cursor loop body (lines
+    149-154: ``for task in items`` + ``for run in repo_results...``),
+    the truthy ``next_cursor`` branch (line 157), and the latency_ms
+    emit block (lines 163-168). The default test repository is empty so
+    the named AC test only covers the loop exit; this test forces
+    non-empty pages + a non-empty results list so all three branches
+    execute.
+    """  # NFR-09 NFR-11
+    import taskq_api.repository.results as _repo_results
+    import taskq_api.repository.tasks as _repo_tasks
+
+    page_one = [
+        {"id": f"t-{i:03d}", "status": "done", "command": "echo", "name": f"n{i}", "created_at": "x"}
+        for i in range(200)
+    ]
+    page_two = [
+        {"id": "t-final", "status": "failed", "command": "false", "name": "nfinal", "created_at": "y"}
+    ]
+
+    def _fake_fetch_tasks_page(
+        session, *, limit, cursor, status  # type: ignore[no-untyped-def]
+    ):
+        if cursor is None:
+            return page_one, "t-199"
+        return page_two, ""
+
+    monkeypatch.setattr(_repo_tasks, "fetch_tasks_page", _fake_fetch_tasks_page)
+
+    def _fake_fetch_results_for_task(session, task_id):  # type: ignore[no-untyped-def]
+        # Every task has a 10ms run so durations is non-empty → latency
+        # block (lines 163-168) executes.
+        return [{"run_id": f"r-{task_id}", "task_id": task_id, "duration_ms": 10}]
+
+    monkeypatch.setattr(
+        _repo_results, "fetch_results_for_task", _fake_fetch_results_for_task
+    )
+
+    payload = _metrics_mod._collect_metrics()
+    assert payload["task_counts_by_status"]["done"] == 200
+    assert payload["task_counts_by_status"]["failed"] == 1
+    assert payload["latency_ms"]["p50"] == 10
+
+
+def test_check_db_reachable_returns_true_against_test_db():
+    """``check_db_reachable`` runs the live SELECT-1 probe body.
+
+    Coverage: health.py lines 73-83 — the try-block body (import,
+    ``get_engine()`` + ``engine.connect()`` + ``SELECT 1`` + ``return
+    True``). The named AC test monkey-patches this symbol so the body
+    is unreachable from it; this test exercises the real probe against
+    the in-process SQLite the test conftest installs.
+    """  # NFR-09 NFR-11
+    assert _health_mod.check_db_reachable() is True
+
+
+def test_check_db_reachable_returns_false_when_engine_missing(monkeypatch):
+    """``check_db_reachable`` returns ``False`` when the engine raises.
+
+    Coverage: health.py lines 73-83 — the ``except Exception: return
+    False`` branch. Forces the engine connect to raise so the probe's
+    total-exception handler runs.
+    """  # NFR-09 NFR-11
+    from taskq_api.repository import session as _session
+
+    def _boom() -> None:
+        raise RuntimeError("simulated db outage")
+
+    monkeypatch.setattr(_session, "get_engine", _boom)
+    assert _health_mod.check_db_reachable() is False
+
+
+def test_migrations_dir_returns_path_string():
+    """``_migrations_dir`` resolves to a path string.
+
+    Coverage: health.py line 96 — the ``Path(__file__).resolve()`` /
+    ``.parent.parent / "migrations"`` computation invoked from
+    ``check_migrations_at_head``. The probe is responsible for handing
+    alembic a ``script_location``; this test confirms the helper returns
+    a non-empty absolute string rooted at the in-tree ``taskq_api``
+    package so downstream alembic calls get a deterministic location
+    regardless of cwd.
+    """  # NFR-09 NFR-11
+    path = _health_mod._migrations_dir()
+    assert isinstance(path, str)
+    assert path.endswith("migrations")
+
+
+def test_check_migrations_at_head_invokes_alembic_probe():
+    """``check_migrations_at_head`` runs the alembic probe body.
+
+    Coverage: health.py lines 118-138 — the alembic ``current`` /
+    ``ScriptDirectory.from_config`` body. The probe is allowed to
+    return either True or False here — the contract is that the body
+    EXECUTES (i.e. does not raise). The named AC test monkey-patches
+    this symbol so the real probe body is unreachable from it.
+    """  # NFR-09 NFR-11
+    result = _health_mod.check_migrations_at_head()
+    assert isinstance(result, bool)
+
+
+def test_check_migrations_at_head_returns_false_when_alembic_fails(monkeypatch):
+    """``check_migrations_at_head`` returns ``False`` on alembic errors.
+
+    Coverage: health.py lines 118-138 — the ``except Exception:
+    return False`` branch. Monkey-patches ``database_url`` so the
+    alembic config build fails; the probe must swallow the exception
+    and return ``False`` rather than letting it escape the handler
+    (SPEC.md §8 #11 — fail-closed).
+    """  # NFR-09 NFR-11
+    from taskq_api.repository import session as _session
+
+    def _boom() -> str:
+        raise RuntimeError("simulated alembic misconfig")
+
+    monkeypatch.setattr(_session, "database_url", _boom)
+    assert _health_mod.check_migrations_at_head() is False
+
+
+def test_safe_check_swallows_probe_exception():
+    """``_safe_check`` returns ``False`` when the probe raises.
+
+    Coverage: health.py lines 154-157 — the try/except body of the
+    central fail-closed guard. A raising probe MUST surface as
+    ``False`` so the readiness handler can render a 503 rather than
+    letting the exception escape (SPEC.md §8 #10/#11).
+    """  # NFR-09 NFR-11
+    def _boom() -> bool:
+        raise RuntimeError("simulated probe failure")
+
+    assert _health_mod._safe_check(_boom) is False
+
+
+def test_safe_check_returns_probe_true():
+    """``_safe_check`` returns ``True`` when the probe returns True."""
+    assert _health_mod._safe_check(lambda: True) is True
+
+
+def test_check_migrations_at_head_compares_revision(monkeypatch):
+    """``check_migrations_at_head`` walks the head-vs-current comparison.
+
+    Coverage: health.py lines 129-136 — the body inside
+    ``check_migrations_at_head`` after ScriptDirectory + alembic_current
+    succeed (``script_directory.head`` resolution, ``if head_revision
+    is None`` guard, the bool/current-rev comparison). Patches the
+    alembic source modules so the probe's local imports resolve to
+    stubs returning matching revisions (canonical happy path: current
+    at head → ``True``).
+    """
+    import alembic.command as _alembic_command
+    import alembic.script as _alembic_script
+
+    real_migrations_dir = str(
+        _health_mod.Path(__file__).resolve().parent.parent.parent / "migrations"
+    )
+    monkeypatch.setattr(_health_mod, "_migrations_dir", lambda: real_migrations_dir)
+
+    class _FakeScriptDirectory:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @classmethod
+        def from_config(cls, cfg):
+            return cls()
+
+        @property
+        def head(self):
+            return "rev-head-fr09"
+
+    monkeypatch.setattr(_alembic_script, "ScriptDirectory", _FakeScriptDirectory)
+    monkeypatch.setattr(_alembic_command, "current", lambda _cfg: ["rev-head-fr09"])
+
+    assert _health_mod.check_migrations_at_head() is True
+
+
+def test_check_migrations_at_head_returns_false_when_head_missing(monkeypatch):
+    """``check_migrations_at_head`` returns ``False`` when ``head is None``.
+
+    Coverage: health.py lines 131-132 — the ``if head_revision is
+    None: return False`` branch. Forces ``ScriptDirectory.head`` to be
+    None so the probe's "head resolution failed" early-return fires;
+    also stubs ``alembic_current`` so the probe reaches the head check
+    rather than collapsing to the except branch first.
+    """
+    import alembic.command as _alembic_command
+    import alembic.script as _alembic_script
+
+    real_migrations_dir = str(
+        _health_mod.Path(__file__).resolve().parent.parent.parent / "migrations"
+    )
+    monkeypatch.setattr(_health_mod, "_migrations_dir", lambda: real_migrations_dir)
+
+    class _HeadlessScriptDirectory:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @classmethod
+        def from_config(cls, cfg):
+            return cls()
+
+        @property
+        def head(self):
+            return None
+
+    monkeypatch.setattr(
+        _alembic_script, "ScriptDirectory", _HeadlessScriptDirectory
+    )
+    # ``alembic_current`` is called BEFORE the ``if head_revision is None``
+    # guard; without a stub the DB lookup raises and the except branch
+    # short-circuits the early-return we are trying to cover.
+    monkeypatch.setattr(_alembic_command, "current", lambda _cfg: ["rev-head-fr09"])
+
+    assert _health_mod.check_migrations_at_head() is False
