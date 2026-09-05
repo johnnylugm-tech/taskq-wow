@@ -1,0 +1,75 @@
+{
+  "review_status": "APPROVE",
+  "reason": "All five FR-02 requirements have pinning assertions: POST→202+run_id via test_run_task_202_returns_run_id:240,244; asyncio.create_subprocess_exec+shlex.split+no shell=True via test_no_shell_true_in_source_tree:285,292,296; state machine pending→running→{done,failed,timeout} via test_task_state_machine_transitions:565,571,586 + test_execute_command_failed_branch_on_non_zero_exit:714; task_results columns via test_run_result_persists_to_task_results_table:426-436,422,440; GET newest-first via test_list_runs_ordered_newest_first:513. Timeout mechanism via test_runner_timeout_kills_subprocess_no_orphan:358,363,375.",
+  "citations": [
+    "SPEC.md:95",
+    "SPEC.md:96",
+    "SPEC.md:97",
+    "SPEC.md:98",
+    "SPEC.md:99",
+    "03-development/tests/test_fr02.py:240",
+    "03-development/tests/test_fr02.py:244",
+    "03-development/tests/test_fr02.py:285",
+    "03-development/tests/test_fr02.py:292",
+    "03-development/tests/test_fr02.py:296",
+    "03-development/tests/test_fr02.py:336",
+    "03-development/tests/test_fr02.py:358",
+    "03-development/tests/test_fr02.py:363",
+    "03-development/tests/test_fr02.py:375",
+    "03-development/tests/test_fr02.py:422",
+    "03-development/tests/test_fr02.py:440",
+    "03-development/tests/test_fr02.py:513",
+    "03-development/tests/test_fr02.py:565",
+    "03-development/tests/test_fr02.py:571",
+    "03-development/tests/test_fr02.py:586",
+    "03-development/tests/test_fr02.py:714"
+  ],
+  "docs_embedded": [
+    "SPEC.md"
+  ],
+  "gaps": [
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr02.py:336",
+      "message": "Requirement 'timeout is TASKQ_TASK_TIMEOUT' is partially verified: line 336 only asserts the config default is 10.0, but the timeout test (line 354) passes an explicit timeout=0.5 override, so the runner's actual use of config.TASKQ_TASK_TIMEOUT as the default timeout is not exercised",
+      "fr_id": "FR-02"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr02.py:452",
+      "message": "duration_ms >= 0 is a weak type-only check (any non-negative int satisfies it); the column-existence part of the assertion is what pins the requirement, but the numeric bound is essentially vacuous",
+      "fr_id": "FR-02"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "over_interpretation",
+      "canonical_ref": "03-development/tests/test_fr02.py:292",
+      "message": "Positive halves assert the substrings 'create_subprocess_exec' and 'shlex.split' appear in runner source — verifies presence of the names but not the required `*shlex.split(command)` splat-argument call form from SPEC line 96",
+      "fr_id": "FR-02"
+    }
+  ],
+  "criteria_review": {
+    "requirement_path": "SPEC.md",
+    "declared_tests": [
+      "test_list_runs_ordered_newest_first",
+      "test_no_shell_true_in_source_tree",
+      "test_run_result_persists_to_task_results_table",
+      "test_run_task_202_returns_run_id",
+      "test_runner_timeout_kills_subprocess_no_orphan",
+      "test_task_state_machine_transitions"
+    ],
+    "assertion_digests": {
+      "test_list_runs_ordered_newest_first": "8d01028d61e374db04be00132f2fff94045ac3b5a17ca3c8c3579ee03d944a27",
+      "test_no_shell_true_in_source_tree": "642f2c7c73fbb99b5420c8a8fbe01f7eea84e307e1365cae326bb97aa1fa79e8",
+      "test_run_result_persists_to_task_results_table": "dbc5ea533d6036efe799cd50b5584a3ba5f15cd42aea0c647eaca05e67b6da4e",
+      "test_run_task_202_returns_run_id": "bd77ddf555956fdc0699bd492b36053ef1abe961181aeaa7b219532deb6d6804",
+      "test_runner_timeout_kills_subprocess_no_orphan": "9ef1c6df5cd2c07be0761749e30170ed1b8ea4cfc0a0c35b90b074d18338091f",
+      "test_task_state_machine_transitions": "06b95881371b337e26305b5f4e83fe3624925b6be53462abb5a45d443eec2896"
+    },
+    "test_files": [
+      "03-development/tests/test_fr02.py"
+    ]
+  }
+}
