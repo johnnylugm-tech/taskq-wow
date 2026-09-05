@@ -182,6 +182,11 @@ def session_scope() -> Iterator[Session]:
     Session itself (AC-6.2 / AC-6.1).
     """  # NFR-03 NFR-11
     get_engine()
+    # ``get_engine()`` initialises ``_session_factory`` on first call; the
+    # runtime invariant is that it is now non-None. The explicit assertion
+    # is for pyright (``reportOptionalCall``) — type-checkers cannot see
+    # that ``get_engine`` mutates the module-level factory.
+    assert _session_factory is not None
     session = _session_factory()
     try:
         yield session
