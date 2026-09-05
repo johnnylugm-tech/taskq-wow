@@ -42,6 +42,12 @@ from taskq_api.repository.rate_buckets import locked_bucket, upsert_bucket
 # per request, not per byte or per route).
 _TOKENS_PER_REQUEST = 1.0
 
+# Monotonic counter of bucket rejections (allowed == False). Read by
+# ``taskq_api.api.metrics`` to surface the FR-09 /v1/metrics
+# ``rate_limit_rejections`` aggregate. Module-scoped (not per-bucket)
+# because SPEC.md line 158 specifies a single process-wide count.
+_REJECTION_COUNT = 0
+
 
 @dataclass
 class RateLimitDecision:
@@ -109,6 +115,15 @@ class RateLimiter:
             tokens = self._refilled_tokens(bucket, now)
             allowed, retry_after, tokens = self._spend(tokens)
             upsert_bucket(key_id, tokens=tokens, last_refill_at=now.isoformat())
+        if not allowed:
+            # Increment the process-wide counter; guarded so an unexpected
+            # exception in the bookkeeping cannot swallow the rejection
+            # decision the caller depends on.
+            global _REJECTION_COUNT
+            try:
+                _REJECTION_COUNT += 1
+            except Exception:  # noqa: BLE001
+                pass
         return RateLimitDecision(
             allowed=allowed,
             retry_after_seconds=retry_after,
@@ -190,3 +205,12 @@ def check_rate_limit(key_id: str) -> RateLimitDecision:
     TEST_SPEC.md §1 FR-05 AC-5.2 — direct seam for persistence test.
     """  # NFR-09 NFR-10
     return _default_rate_limiter().check(key_id)
+
+
+def get_rate_limit_rejections() -> int:
+    """Return the process-wide rate-limit rejection count (FR-09).
+
+    Citations: SPEC.md line 158 — ``rate_limit_rejections`` aggregate
+    surfaced via ``GET /v1/metrics`` (admin scope).
+    """  # NFR-09 NFR-10
+    return _REJECTION_COUNT
