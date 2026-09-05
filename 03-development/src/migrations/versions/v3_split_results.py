@@ -39,6 +39,87 @@ down_revision: None | str = "v2"
 branch_labels: None | str = None
 depends_on: None | str = None
 
+# Result fields carried in v1/v2's ``tasks.result_json`` and promoted to
+# typed columns in v3+'s ``task_results``. Single source of truth for
+# the data migration: both the upgrade (json_extract) and the
+# downgrade (json_object) reference this tuple so the round-trip
+# preserves each field bytewise (SPEC.md line 141).
+_RESULT_FIELDS: tuple[str, ...] = (
+    "exit_code",
+    "stdout_tail",
+    "stderr_tail",
+    "duration_ms",
+    "finished_at",
+)
+
+# Subset of ``_RESULT_FIELDS`` stored as INTEGER (not TEXT) in
+# ``task_results``. The upgrade must CAST ``json_extract`` for these
+# fields so the downgrade-side ``json_object`` rebuilds a matching JSON
+# payload (no type drift).
+_INTEGER_RESULT_FIELDS: frozenset[str] = frozenset(
+    {"exit_code", "duration_ms"}
+)
+
+
+def _build_upgrade_data_sql() -> str:
+    """Build the ``INSERT INTO task_results ... SELECT ...`` SQL that
+    migrates rows from ``tasks.result_json`` into the typed columns.
+
+    The SELECT projection is generated from ``_RESULT_FIELDS`` so adding
+    a new field is a one-line change at the constant definition rather
+    than a duplicated edit across INSERT columns, SELECT projection,
+    and the downgrade ``json_object`` arguments.
+    """  # NFR-09
+    columns = ", ".join(_RESULT_FIELDS)
+    select_parts = []
+    for field in _RESULT_FIELDS:
+        path = "$.{0}".format(field)
+        extract = "json_extract(tasks.result_json, '{0}')".format(path)
+        if field in _INTEGER_RESULT_FIELDS:
+            select_parts.append(
+                "CAST({0} AS INTEGER)".format(extract)
+            )
+        else:
+            select_parts.append(extract)
+    projection = ",\n                ".join(select_parts)
+    return (
+        "INSERT INTO task_results\n"
+        "    (run_id, task_id, {0})\n"
+        "SELECT\n"
+        "    'run-' || tasks.id,\n"
+        "    tasks.id,\n"
+        "                {1}\n"
+        "FROM tasks\n"
+        "WHERE tasks.result_json IS NOT NULL\n"
+    ).format(columns, projection)
+
+
+def _build_downgrade_data_sql() -> str:
+    """Build the ``UPDATE tasks SET result_json = (...)`` SQL that
+    reverse-migrates ``task_results`` rows back into the JSON payload.
+
+    The ``json_object`` argument list is generated from
+    ``_RESULT_FIELDS`` so the key order matches the upgrade side
+    bytewise (SPEC.md line 141).
+    """  # NFR-09
+    object_args = ",\n".join(
+        "                    '{0}', task_results.{0}".format(field)
+        for field in _RESULT_FIELDS
+    )
+    return (
+        "UPDATE tasks\n"
+        "SET result_json = (\n"
+        "    SELECT json_object(\n"
+        "{0}\n"
+        "    )\n"
+        "    FROM task_results\n"
+        "    WHERE task_results.task_id = tasks.id\n"
+        ")\n"
+        "WHERE EXISTS (\n"
+        "    SELECT 1 FROM task_results WHERE task_results.task_id = tasks.id\n"
+        ")\n"
+    ).format(object_args)
+
 
 def upgrade() -> None:
     """[FR-07] v3 upgrade — create ``task_results``, migrate data, drop
@@ -75,25 +156,7 @@ def upgrade() -> None:
     # the typed task_results columns. SQLite's json_extract returns the
     # raw JSON scalar; CAST keeps INTEGER columns as INTEGER so the
     # downgrade-side ``json_object`` rebuilds a matching payload.
-    op.execute(
-        sa.text(
-            """
-            INSERT INTO task_results
-                (run_id, task_id, exit_code, stdout_tail,
-                 stderr_tail, duration_ms, finished_at)
-            SELECT
-                'run-' || tasks.id,
-                tasks.id,
-                CAST(json_extract(tasks.result_json, '$.exit_code') AS INTEGER),
-                json_extract(tasks.result_json, '$.stdout_tail'),
-                json_extract(tasks.result_json, '$.stderr_tail'),
-                CAST(json_extract(tasks.result_json, '$.duration_ms') AS INTEGER),
-                json_extract(tasks.result_json, '$.finished_at')
-            FROM tasks
-            WHERE tasks.result_json IS NOT NULL
-            """
-        )
-    )
+    op.execute(sa.text(_build_upgrade_data_sql()))
 
     op.drop_column("tasks", "result_json")
 
@@ -132,26 +195,6 @@ def downgrade() -> None:
     # insertion order is preserved by json.dumps), so the
     # reconstructed text is byte-identical to the original payload for
     # round-trip safety.
-    op.execute(
-        sa.text(
-            """
-            UPDATE tasks
-            SET result_json = (
-                SELECT json_object(
-                    'exit_code', task_results.exit_code,
-                    'stdout_tail', task_results.stdout_tail,
-                    'stderr_tail', task_results.stderr_tail,
-                    'duration_ms', task_results.duration_ms,
-                    'finished_at', task_results.finished_at
-                )
-                FROM task_results
-                WHERE task_results.task_id = tasks.id
-            )
-            WHERE EXISTS (
-                SELECT 1 FROM task_results WHERE task_results.task_id = tasks.id
-            )
-            """
-        )
-    )
+    op.execute(sa.text(_build_downgrade_data_sql()))
 
     op.drop_table("task_results")
