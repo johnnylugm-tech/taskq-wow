@@ -1,0 +1,62 @@
+{
+  "review_status": "APPROVE",
+  "reason": "REQ1 (SPEC:103 /v1/* missing/invalid → 401+problem+json) pinned by test_v1_endpoints_401_without_api_key line 225 status==401, line 228 problem+json, line 236 type==/errors/unauthenticated; reinforced by test_unknown_api_key_returns_401 line 842. REQ2 (SPEC:104 SHA-256 hash, no plaintext, hmac.compare_digest) pinned by test_api_keys_table_stores_only_sha256_hashes line 275 64-hex-len, line 279 hex regex, line 288 no-plaintext-in-row, line 297 no-plaintext-in-any-column; and test_key_compare_uses_constant_time line 353 spy-called>=1, line 380/392 source contains compare_digest. REQ3 (SPEC:105 CLI create, plaintext once) pinned by test_key_create_prints_plaintext_once line 428 exit==0, line 436 stdout contains tk-prefix, line 448 occurrences==1, line 463/470 plaintext never persisted. REQ4 (SPEC:106 revoked_at invalid) pinned by test_revoked_key_returns_401 line 525 status==401, line 529 problem+json, line 531 type. REQ5 (SPEC:107 healthz/readyz no auth) pinned by test_healthz_readyz_no_auth_required line 572 status==200 for both, line 586 bogus-key still 200. All assertions fail when the requirement is violated and pass when it holds.",
+  "citations": [
+    "SPEC.md:103",
+    "SPEC.md:104",
+    "SPEC.md:105",
+    "SPEC.md:106",
+    "SPEC.md:107",
+    "03-development/tests/test_fr03.py:207",
+    "03-development/tests/test_fr03.py:225",
+    "03-development/tests/test_fr03.py:228",
+    "03-development/tests/test_fr03.py:236",
+    "03-development/tests/test_fr03.py:247",
+    "03-development/tests/test_fr03.py:275",
+    "03-development/tests/test_fr03.py:279",
+    "03-development/tests/test_fr03.py:288",
+    "03-development/tests/test_fr03.py:297",
+    "03-development/tests/test_fr03.py:308",
+    "03-development/tests/test_fr03.py:353",
+    "03-development/tests/test_fr03.py:380",
+    "03-development/tests/test_fr03.py:400",
+    "03-development/tests/test_fr03.py:428",
+    "03-development/tests/test_fr03.py:436",
+    "03-development/tests/test_fr03.py:448",
+    "03-development/tests/test_fr03.py:463",
+    "03-development/tests/test_fr03.py:470",
+    "03-development/tests/test_fr03.py:481",
+    "03-development/tests/test_fr03.py:525",
+    "03-development/tests/test_fr03.py:529",
+    "03-development/tests/test_fr03.py:531",
+    "03-development/tests/test_fr03.py:547",
+    "03-development/tests/test_fr03.py:572",
+    "03-development/tests/test_fr03.py:586"
+  ],
+  "docs_embedded": [
+    "SPEC.md"
+  ],
+  "gaps": [],
+  "criteria_review": {
+    "requirement_path": "SPEC.md",
+    "declared_tests": [
+      "test_api_keys_table_stores_only_sha256_hashes",
+      "test_healthz_readyz_no_auth_required",
+      "test_key_compare_uses_constant_time",
+      "test_key_create_prints_plaintext_once",
+      "test_revoked_key_returns_401",
+      "test_v1_endpoints_401_without_api_key"
+    ],
+    "assertion_digests": {
+      "test_api_keys_table_stores_only_sha256_hashes": "60bf46baec6d638ffdae6afd975fead6c0bb1992a5924a840d95538d5d30a71e",
+      "test_healthz_readyz_no_auth_required": "6716a340d505d55918fd984fe8223e7768ab4d46d1e43f8f521f7313fccf9fa3",
+      "test_key_compare_uses_constant_time": "ccb826e151e662d747e82fb9e834dfe7eb38d162cdf4f454e34f1496d1aa354d",
+      "test_key_create_prints_plaintext_once": "fae5a3112b531c53af5d611b8c220f8d6b10ef3fb98d369dcf1d4dcdfbcb3635",
+      "test_revoked_key_returns_401": "3f212f189d39e8a1bfd7d1ac5ff9701a00e161f5a5cc6b6a1d2da53980a722d3",
+      "test_v1_endpoints_401_without_api_key": "8208d8c319623ac876fb336c007b4c61d1135565718214b9ce0533e8d77901e7"
+    },
+    "test_files": [
+      "03-development/tests/test_fr03.py"
+    ]
+  }
+}
