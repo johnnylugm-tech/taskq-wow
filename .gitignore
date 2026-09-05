@@ -20,3 +20,8 @@ htmlcov/
 .mutmut-cache/
 .code-review-graph/
 .claude/worktrees/
+
+# FR-06 — local SQLite database created from TASKQ_DB_URL (SPEC §5.1
+# default `sqlite:///./taskq.db`); runtime state, never committed.
+taskq.db
+taskq.db-journal
