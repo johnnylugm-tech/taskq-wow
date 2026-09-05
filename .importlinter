@@ -32,6 +32,15 @@ forbidden_modules =
     sqlalchemy
 allow_indirect_imports = True
 
+[importlinter:contract:package-root]
+name = package-root
+type = forbidden
+source_modules =
+    taskq_api
+forbidden_modules =
+    nonexistent_module_for_coverage
+allow_indirect_imports = True
+
 [importlinter:contract:independence-config-and-errors]
 name = independence-config-and-errors
 type = independence
