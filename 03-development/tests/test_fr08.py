@@ -575,3 +575,293 @@ def test_cancelled_error_propagates_through_exception_handlers():
         f"(AC-8.4 — NFR-03 forbids the runner from swallowing "
         f"CancelledError); caller_saw_cancel={caller_saw_cancel}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Coverage-gap tests — pin the lines in runner.py that the four named
+# FR-08 cases do not cross. All four AC tests are focused on the AC
+# contracts and bypass these branches either by patching ``_run_one``
+# (tests 1, 2, 4) or by driving only the timeout branch (test 3). Each
+# new test runs **in-process** (``asyncio.run`` + direct module-level
+# call) so pytest-cov attributes the hits back to ``runner.py``.
+#
+# Cited in the Gate-1 audit's ``coverage_gap_lines`` for FR-08:
+#   - line 103         (enqueue_run body — never called by AC tests)
+#   - lines 152-154    (execute_command non-timeout branch)
+#   - lines 212-237    (run_task body — AC tests drive TaskRunner, not run_task)
+#   - lines 413-415    (_scheduled except Exception → "failed" branch)
+#   - line 464         (drain() empty-_inflight early return)
+# ---------------------------------------------------------------------------
+
+
+def test_enqueue_run_returns_non_empty_uuid_string():
+    """``enqueue_run`` returns a non-empty UUIDv4 string (line 103).
+
+    The FR-08 AC tests do not call ``enqueue_run``; they drive
+    ``TaskRunner.submit`` instead. Without this fixture line 103
+    stays at 0 hits and the coverage gate blocks the dispatch.
+    """  # NFR-09 NFR-10
+    run_id = _runner_mod.enqueue_run("any-task-id")
+
+    assert isinstance(run_id, str) and run_id, (
+        f"enqueue_run must return a non-empty string, got {run_id!r}"
+    )
+    # Sanity — the value parses as a UUIDv4 (8-4-4-4-12 hex chars).
+    parts = run_id.split("-")
+    assert len(parts) == 5, f"expected UUIDv4 hyphenation, got {run_id!r}"
+    for part in parts:
+        assert len(part) in (4, 8, 12), (
+            f"UUIDv4 segment lengths must be 4/4/4/4/12, got {run_id!r}"
+        )
+
+    # Two calls must produce distinct ids (uuid.uuid4 is randomised).
+    other = _runner_mod.enqueue_run("another-task-id")
+    assert other != run_id, (
+        f"each enqueue_run call must mint a fresh run_id, got {run_id!r} twice"
+    )
+
+
+def test_execute_command_success_branch_returns_done_state():
+    """``execute_command("echo hi", timeout=5)`` ends in ``state="done"``
+    (lines 152-154 — non-timeout success branch).
+
+    Test 3 (``sleep 60`` with task_timeout=0.5) drives only the timeout
+    branch (line 138-144). Tests 1, 2, 4 patch ``_run_one`` and never
+    cross the success branch of ``execute_command`` at all. Without
+    this fixture, lines 152-154 stay at 0 hits.
+    """  # NFR-09 NFR-10
+    result = asyncio.run(
+        _runner_mod.execute_command("echo hi", timeout=5.0)
+    )
+
+    assert result["state"] == "done", (
+        f"a fast echo must end in state 'done', got {result['state']!r}"
+    )
+    assert result["exit_code"] == 0
+    # The captured stdout must surface the echo payload so the
+    # downstream consumer can diagnose the run.
+    assert result["stdout_tail"] is not None
+    assert "hi" in result["stdout_tail"], (
+        f"stdout_tail must contain the command's stdout, got {result['stdout_tail']!r}"
+    )
+    # The timing / finished fields are populated uniformly (SPEC §5.3).
+    assert isinstance(result["duration_ms"], int) and result["duration_ms"] >= 0
+    assert bool(result["finished_at"])
+
+
+def test_runner_drain_with_no_inflight_returns_zero_summary():
+    """``drain()`` with an empty ``_inflight`` returns the zero summary
+    immediately (line 464 — early-return branch).
+
+    All four AC tests submit at least one task before calling drain(),
+    so the early-return branch is never crossed. Without this fixture
+    line 464 stays at 0 hits.
+    """  # NFR-09 NFR-10
+    async def _scenario() -> None:
+        runner = _runner_mod.TaskRunner()
+
+        # Sanity — the runner is freshly constructed with no submits.
+        assert not runner._inflight
+
+        summary = await runner.drain()
+
+        assert summary == {
+            "drained": 0,
+            "interrupted": 0,
+            "exit_code": 0,
+        }, f"drain() on empty runner must return zero summary, got {summary!r}"
+
+    asyncio.run(_scenario())
+
+
+def test_runner_records_failed_state_when_run_one_raises():
+    """A non-CancelledError exception inside ``_run_one`` records
+    ``state="failed"`` on the runner's bookkeeping (lines 413-415).
+
+    Tests 1, 2, 4 patch ``_run_one`` to benign bodies; test 3 drives
+    the real subprocess path. None of them triggers the
+    ``except Exception`` branch in ``_scheduled``. Without this fixture
+    lines 413-415 stay at 0 hits and the coverage gate blocks the
+    dispatch. The exception must still PROPAGATE — NFR-03 forbids the
+    runner from swallowing it.
+    """  # NFR-03 NFR-09 NFR-10
+    async def _scenario() -> None:
+        runner = _runner_mod.TaskRunner()
+
+        async def _raising_run_one(task_id, command, *, timeout):
+            raise ValueError("simulated task failure")
+
+        runner._run_one = _raising_run_one  # type: ignore[attr-defined]
+
+        run_id = await runner.submit("task-fail", "echo hi")
+
+        # drain() must re-raise the ValueError via asyncio.gather — the
+        # runner records "failed" but does NOT swallow the exception
+        # (NFR-03).
+        with pytest.raises(ValueError) as excinfo:
+            await runner.drain()
+        assert "simulated task failure" in str(excinfo.value)
+
+        assert runner.task_states.get(run_id) == "failed", (
+            f"a task whose _run_one raised must end in state 'failed', "
+            f"got task_states={runner.task_states!r}"
+        )
+
+    asyncio.run(_scenario())
+
+
+def test_run_task_drives_full_state_machine_and_persists_result():
+    """``run_task`` fetches the task, drives the state machine, persists
+    the result row, and returns the full lifecycle dict (lines 212-237).
+
+    The FR-08 AC tests drive the ``TaskRunner`` surface only; they
+    never call ``run_task`` (the FR-02 entry point that shares the
+    runner module). Without this fixture, lines 212-237 stay at 0 hits
+    and the coverage gate blocks the dispatch.
+    """  # NFR-09 NFR-10
+    # ``tasks.py``'s ``_reset_state`` runs at import time, so
+    # ``task-uuid-001`` (command="echo preexisting") is seeded. We
+    # re-seed defensively to make ordering independent.
+    import taskq_api.repository.tasks as _tasks_mod
+    _tasks_mod._reset_state()
+
+    run = asyncio.run(_runner_mod.run_task("task-uuid-001"))
+
+    # The full lifecycle dict is what ``run_task`` promises (SPEC §3
+    # FR-02 / SPEC line 97 + 98).
+    assert run["transitions"] == ["pending", "running", "done"], (
+        f"expected state-machine walk pending→running→done, "
+        f"got {run['transitions']!r}"
+    )
+    assert run["state"] == "done"
+    assert run["exit_code"] == 0
+    assert isinstance(run["run_id"], str) and run["run_id"]
+    assert "stdout_tail" in run and run["stdout_tail"] is not None
+    assert "stderr_tail" in run and run["stderr_tail"] is not None
+    assert isinstance(run["duration_ms"], int) and run["duration_ms"] >= 0
+    assert bool(run["finished_at"])
+
+    # And the result row must be persisted to ``task_results`` so the
+    # FR-02 GET /v1/tasks/{id}/runs endpoint can return it (SPEC line 98).
+    import taskq_api.repository.results as _results_mod
+    rows = _results_mod.fetch_results_for_task(None, "task-uuid-001")
+    assert len(rows) == 1, (
+        f"run_task must persist exactly one task_results row, got {len(rows)}"
+    )
+    assert rows[0]["run_id"] == run["run_id"]
+    assert rows[0]["exit_code"] == 0
+    assert rows[0]["finished_at"] == run["finished_at"]
+
+
+# ---------------------------------------------------------------------------
+# Coverage-gap test — defensive drain overdue cancellation branch
+# (lines 496-498).
+#
+# The four AC tests (and the early-return test above) hit drain() either
+# with empty _inflight (line 464) or with tasks that ``asyncio.wait_for``
+# has already cancelled by the time the ``TimeoutError`` is raised. In
+# Python 3.11 ``asyncio.wait_for`` cancels AND reaps the inner awaitable
+# before raising, so the ``if not task.done()`` guard at line 495 sees
+# every task in CANCELLED state and skips the cancel-and-record block at
+# lines 496-498.
+#
+# To exercise the defensive branch we monkeypatch ``asyncio.wait_for``
+# so it raises ``TimeoutError`` WITHOUT cancelling the inner tasks —
+# simulating an older asyncio or a pathological inner awaitable. The
+# runner's defensive block then runs to completion.
+# ---------------------------------------------------------------------------
+
+
+def test_drain_overdue_branch_cancels_uncancelled_inflight_tasks(monkeypatch):
+    """drain() overdue branch cancels tasks that asyncio.wait_for did NOT
+    cancel (lines 496-498 — defensive cancel-and-record).
+
+    Monkeypatches ``asyncio.wait_for`` to raise ``TimeoutError``
+    immediately without awaiting cancellation so the inner tasks are
+    still pending when the except block runs. The defensive
+    ``task.cancel(); state[run_id] = INTERRUPTED; interrupted_now += 1``
+    triple must execute for each pending task.
+    """  # NFR-09 NFR-10
+    real_wait_for = asyncio.wait_for
+
+    async def _fake_wait_for(awaitable, *, timeout):
+        # Schedule cancellation on the inner gather (so the real
+        # wait_for's contract is partially observed) but DO NOT yield
+        # to the loop before raising TimeoutError — that keeps the
+        # individual tasks in a non-DONE state when the runner's
+        # ``except asyncio.TimeoutError`` block iterates, which is
+        # exactly the race lines 496-498 defend against.
+        try:
+            awaitable.cancel()
+        except Exception:
+            pass
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(asyncio, "wait_for", _fake_wait_for)
+
+    async def _scenario() -> None:
+        # Short drain deadline so a real wait_for would also time out.
+        previous_drain = getattr(config, "TASKQ_DRAIN_TIMEOUT", None)
+        config.TASKQ_DRAIN_TIMEOUT = 0.05
+        try:
+            runner = _runner_mod.TaskRunner()
+
+            blocker = asyncio.Event()
+
+            async def _patched_run_one(task_id, command, *, timeout):
+                # Block forever — the drain must cancel us.
+                await blocker.wait()
+
+            runner._run_one = _patched_run_one  # type: ignore[attr-defined]
+
+            # Submit 2 tasks; both will block forever.
+            await runner.submit("task-a", "echo a")
+            await runner.submit("task-b", "echo b")
+            await asyncio.sleep(0.01)  # let the tasks start
+
+            summary = await runner.drain()
+
+            # Both tasks must be recorded as INTERRUPTED by the
+            # defensive branch (lines 496-498).
+            assert summary["exit_code"] == 0
+            assert summary["interrupted"] == 2, (
+                f"drain overdue branch must cancel and record both "
+                f"in-flight tasks as INTERRUPTED, got summary={summary!r} "
+                f"task_states={runner.task_states!r}"
+            )
+            interrupted_count = sum(
+                1
+                for state in runner.task_states.values()
+                if state == _runner_mod.INTERRUPTED
+            )
+            assert interrupted_count == 2, (
+                f"both tasks must be marked INTERRUPTED by the defensive "
+                f"branch, got {runner.task_states!r}"
+            )
+        finally:
+            if previous_drain is not None:
+                config.TASKQ_DRAIN_TIMEOUT = previous_drain
+
+    asyncio.run(_scenario())
+    # The monkeypatch is auto-undone by pytest, but restore the symbol
+    # name anyway so a later assert in the same process sees the real
+    # implementation.
+    monkeypatch.setattr(asyncio, "wait_for", real_wait_for)
+
+
+def test_run_task_lookuperror_on_unknown_task_id():
+    """``run_task`` with an unknown ``task_id`` raises ``LookupError``
+    (line 217 — the missing-task guard).
+
+    ``test_run_task_drives_full_state_machine_and_persists_result``
+    only exercises the happy path; without a dedicated test for the
+    missing-task guard, line 217 stays at 0 hits.
+    """  # NFR-09 NFR-10
+    missing_id = "task-uuid-runner-missing"
+
+    with pytest.raises(LookupError) as excinfo:
+        asyncio.run(_runner_mod.run_task(missing_id))
+    assert missing_id in str(excinfo.value), (
+        f"LookupError message should name the missing task id, "
+        f"got {excinfo.value!r}"
+    )
