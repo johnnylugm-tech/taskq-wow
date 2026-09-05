@@ -71,13 +71,19 @@ def check_db_reachable() -> bool:
     Citations: SPEC.md line 157 + §8 #10.
     """  # NFR-04 NFR-09 NFR-11
     try:
-        from sqlalchemy import text
-
+        # NOTE: do NOT import sqlalchemy here — the NFR-06
+        # ``forbidden-sqlalchemy`` contract (``.importlinter``) forbids
+        # ``taskq_api.api`` from importing ``sqlalchemy`` directly. We
+        # reach the engine only through ``repository.session`` (the
+        # persistence seam) and use ``Connection.exec_driver_sql`` to
+        # run a parameterless SELECT without constructing a ``text()``
+        # expression — that keeps this probe hermetic against the layer
+        # contract while still detecting DB outages end-to-end.
         from taskq_api.repository.session import get_engine
 
         engine = get_engine()
         with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+            connection.exec_driver_sql("SELECT 1")
         return True
     except Exception:  # noqa: BLE001  (probe intentionally total — §8 #10)
         return False
@@ -126,7 +132,14 @@ def check_migrations_at_head() -> bool:
         cfg.set_main_option("script_location", _migrations_dir())
         cfg.set_main_option("sqlalchemy.url", database_url())
         script_directory = ScriptDirectory.from_config(cfg)
-        head_revision: Optional[str] = script_directory.head
+        # ``head`` is exposed on alembic's ``ScriptDirectory`` at runtime
+        # but is not part of its declared stub surface that pyright can
+        # see (the in-tree test fixtures also depend on this attribute).
+        # Pin the call-site with a ``getattr`` fallback so the probe
+        # survives both real alembic (which may or may not declare
+        # ``head`` depending on the version) and the test-side fake
+        # ``ScriptDirectory`` (which always defines it as a property).
+        head_revision: Optional[str] = getattr(script_directory, "head", None)
         current_rev: Optional[str] = alembic_current(cfg)
         if head_revision is None:
             return False
