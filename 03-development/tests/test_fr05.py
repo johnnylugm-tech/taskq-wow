@@ -293,6 +293,7 @@ def test_rate_limit_429_with_retry_after(fr05_client, fr05_actor_state):
     assert expected_retry_after_present == "true"
     assert num_requests == 21
     assert int(bucket_capacity) == 20
+    assert expected_status == 429
 
     # The test app constructs an empty in-memory bucket at the start of
     # this request burst via the autouse ``_reset_rate_buckets_store``
@@ -427,6 +428,7 @@ def test_rate_bucket_persists_across_restart_and_uses_row_lock(monkeypatch):
     assert persisted_tokens_before == 3.0
     assert persisted_tokens_after_one_call == 2.0
     assert expected_lock_granularity == "row"
+    assert persisted_tokens_before == 3 and persisted_tokens_after_one_call == 2
 
     # -----------------------------------------------------------------
     # PART A — persistence across "worker restart"
@@ -629,6 +631,7 @@ def test_healthz_readyz_exempt_from_rate_limit(fr05_client, fr05_actor_state):
     assert endpoint == "readyz"
     assert num_requests == 100
     assert int(expected_status) == 200
+    assert expected_status == 200
 
     # ---- Sub-assertion FR05-healthz-exempt-200: 100 GETs to /readyz. ----
     readyz_responses = []
