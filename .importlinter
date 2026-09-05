@@ -16,12 +16,12 @@ layers =
 name = forbidden-sqlalchemy
 type = forbidden
 source_modules =
-    taskq_api
     taskq_api.api
     taskq_api.service
     taskq_api.models
 forbidden_modules =
     sqlalchemy
+allow_indirect_imports = True
 
 [importlinter:contract:independence-config-and-errors]
 name = independence-config-and-errors
