@@ -10,7 +10,7 @@
 [1mContracts[0m
 [1m---------[0m
 [22m[0m
-[1mAnalyzed 48 files, 94 dependencies.[0m
+[1mAnalyzed 49 files, 98 dependencies.[0m
 [1m-----------------------------------[0m
 [22m[0m
 [22mlayers [0m[32m[22mKEPT[0m[33m[22m[0m[22m[0m

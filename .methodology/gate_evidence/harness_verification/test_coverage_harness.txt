@@ -2,8 +2,8 @@
 # returncode: 1
 # agent_score: 100.0 | threshold: 80.0
 
-........................................................................ [ 63%]
-F.........................................                               [100%]
+........................................................................ [ 60%]
+F..............................................                          [100%]
 ================================ tests coverage ================================
 ______________ coverage: platform darwin, python 3.11.15-final-0 _______________
 
@@ -24,7 +24,7 @@ Name                                                         Stmts   Miss  Cover
 03-development/src/taskq_api/api/runs.py                        28      0   100%
 03-development/src/taskq_api/api/tasks.py                       64      0   100%
 03-development/src/taskq_api/config.py                          15      0   100%
-03-development/src/taskq_api/errors.py                           3      3     0%   16-27
+03-development/src/taskq_api/errors.py                          73      0   100%
 03-development/src/taskq_api/models/__init__.py                  0      0   100%
 03-development/src/taskq_api/models/task.py                     18      0   100%
 03-development/src/taskq_api/repository/__init__.py              0      0   100%
@@ -39,7 +39,7 @@ Name                                                         Stmts   Miss  Cover
 03-development/src/taskq_api/service/runner.py                  96      0   100%
 03-development/src/taskq_api/service/tasks.py                   23      0   100%
 ------------------------------------------------------------------------------------------
-TOTAL                                                          809     18    98%
+TOTAL                                                          879     15    98%
 =========================== short test summary info ============================
 FAILED 03-development/tests/test_fr06.py::test_repository_is_only_sqlalchemy_importer
-1 failed, 113 passed in 6.16s
+1 failed, 118 passed in 6.19s
