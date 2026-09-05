@@ -461,12 +461,19 @@ def test_500_detail_omits_internals():
     )
 
     # ---- Sub-assertion FR10-500-no-filepath-leak ----
-    # An absolute path starts with ``/`` and contains at least one
-    # slash separator. The handler must redact / suppress the
-    # ``/srv/taskq_api/...`` fragment from the original exception.
-    abs_path_pattern = re.compile(r"/[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+")
-    assert not abs_path_pattern.search(body_text), (
-        f"500 body MUST NOT contain absolute file paths "
+    # The handler must redact / suppress the *internal* file-path
+    # fragment the trigger exception carried (``/srv/taskq_api/...``).
+    # RFC 7807 mandates the ``type`` field be a URI reference
+    # (SPEC.md §7) and the ``instance`` field be a URI reference for
+    # the request path — both legitimately start with ``/`` and
+    # contain slashes. The targeted invariant is that the *internal
+    # source-tree path* (``/srv/taskq_api/repository/tasks.py``) does
+    # NOT leak; checking every 2+ segment ``/a/b`` substring would
+    # contradict the RFC 7807 contract and AC-10.5.
+    internal_path_fragment = "/srv/taskq_api/"
+    assert internal_path_fragment not in body_text, (
+        f"500 body MUST NOT contain the internal source-tree path "
+        f"fragment {internal_path_fragment!r} "
         f"(AC-10.3 / SPEC.md line 166 + §8 #19 / NFR-02); "
         f"got body={body_text!r}"
     )
