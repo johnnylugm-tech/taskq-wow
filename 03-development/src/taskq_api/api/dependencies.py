@@ -1,6 +1,7 @@
-"""[FR-03][FR-04] FastAPI dependencies — ``require_api_key``, ``require_scope``.
+"""[FR-03][FR-04][FR-05] FastAPI dependencies — auth, scope, rate limit.
 
-This module gates every ``/v1/*`` route per SPEC.md lines 103 + 111-113:
+This module gates every ``/v1/*`` route per SPEC.md lines 103 + 111-113
++ 117-120:
 
 * ``require_api_key`` (FR-03) — reads ``X-API-Key``, hashes it, looks up
   the row, checks ``revoked_at``, returns the row dict or raises
@@ -11,6 +12,9 @@ This module gates every ``/v1/*`` route per SPEC.md lines 103 + 111-113:
   scope it raises HTTP 403 + problem+json with a constant detail so
   the body never discloses whether the targeted resource exists
   (NP-08 / SPEC.md line 112).
+* ``require_rate_limit`` (FR-05) — charges one token against the
+  authenticated key's bucket and raises HTTP 429 + problem+json +
+  ``Retry-After`` when the bucket is empty (SPEC.md line 118).
 
 Both raise HTTPException with the ``application/problem+json`` marker
 header so the patched handler below renders them as RFC 7807 bodies.
@@ -43,6 +47,7 @@ Citations:
 """  # NFR-02 NFR-10 NFR-11
 from __future__ import annotations
 
+import inspect
 from typing import Callable, NoReturn, Optional
 
 import fastapi.applications as _fa
@@ -67,12 +72,13 @@ _PROBLEM_CONTENT_TYPE = "application/problem+json"
 _UNAUTHORIZED_DETAIL = "invalid or missing X-API-Key"
 _FORBIDDEN_DETAIL = "forbidden"
 
-# Status → (problem type URL, problem title). Only 401 / 403 are raised
-# with the marker by this code path. Unknown status uses the generic
-# ``/errors/http`` so the test for /errors/forbidden stays precise.
+# Status → (problem type URL, problem title). Only 401 / 403 / 429 are
+# raised with the marker by this code path. Unknown status uses the
+# generic ``/errors/http`` so the test for /errors/forbidden stays precise.
 _PROBLEM_INFO: dict[int, tuple[str, str]] = {
     401: ("/errors/unauthenticated", "Unauthorized"),
     403: ("/errors/forbidden", "Forbidden"),
+    429: ("/errors/rate-limited", "Too Many Requests"),
 }
 
 # Scope hierarchy: read ⊂ write ⊂ admin (SPEC.md line 111). Any unknown
@@ -276,15 +282,6 @@ def require_scope(required: str) -> Callable[..., dict]:
 # ``/healthz`` and ``/readyz`` MUST NOT depend on ``require_rate_limit``
 # (SPEC.md line 120 / FR-09); the test app mounts those routes without
 # this dependency to verify the exemption.
-#
-# The auth lookup goes through a runtime ``_self.require_api_key`` so a
-# test fixture that monkey-patches ``taskq_api.api.dependencies.
-# require_api_key`` takes effect (test_fr05.py patches the attribute
-# BEFORE the test app is built; a static ``Depends(require_api_key)``
-# would capture the original reference at module load and bypass the
-# patch). The ``try / except TypeError`` fallback handles the case
-# where the patched stub does not accept the ``x_api_key`` kwarg; the
-# real ``require_api_key`` always does.
 # ---------------------------------------------------------------------------
 
 
@@ -296,9 +293,9 @@ def _rate_limited(retry_after_seconds: int) -> NoReturn:
 
     Detail is a CONSTANT (NP-08 / NFR-02). The ``Retry-After`` header
     carries the integer seconds form per SPEC.md line 118
-    ('Retry-After header (秒)'). The patched handler below renders the
-    body as RFC 7807 problem+json with ``type=/errors/http``,
-    ``title=HTTP Error``, ``status=429``, ``detail=<constant>``.
+    ('Retry-After header (秒)'). The patched handler above renders the
+    body as RFC 7807 problem+json with ``type=/errors/rate-limited``,
+    ``title=Too Many Requests``, ``status=429``, ``detail=<constant>``.
 
     Citations: SPEC.md line 118 — 429 + problem+json + Retry-After (秒);
     TEST_SPEC.md §1 FR-05 AC-5.1.
@@ -313,15 +310,34 @@ def _rate_limited(retry_after_seconds: int) -> NoReturn:
     )
 
 
+def _authenticate(x_api_key: Optional[str]) -> dict:
+    """Resolve the actor row through the CURRENT ``require_api_key``.
+
+    The global name is read at call time, so a fixture that
+    monkey-patches ``taskq_api.api.dependencies.require_api_key`` after
+    import is honoured (test_fr05.py does exactly this). Such stubs may
+    omit the ``x_api_key`` parameter, so the signature decides how to
+    call it — catching ``TypeError`` instead would also swallow a
+    ``TypeError`` raised *inside* the dependency and retry a call that
+    already had side effects.
+
+    Citations: SPEC.md line 113 — 單一中介層; SPEC.md line 117 — the
+    bucket is keyed on the authenticated token.
+    """  # NFR-09 NFR-11
+    dependency = require_api_key
+    if "x_api_key" in inspect.signature(dependency).parameters:
+        return dependency(x_api_key=x_api_key)
+    return dependency()
+
+
 def require_rate_limit(
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> dict:
     """FastAPI dependency: enforce per-token token-bucket rate limit.
 
-    Composes the FR-03 ``require_api_key`` dependency via a runtime
-    lookup so test fixtures that monkey-patch
-    ``taskq_api.api.dependencies.require_api_key`` (e.g. test_fr05.py)
-    take effect. Charges one token against the bucket keyed by the
+    Composes the FR-03 ``require_api_key`` dependency via
+    ``_authenticate`` (a runtime lookup, so test fixtures can swap it),
+    then charges one token against the bucket keyed by the
     authenticated ``key_id``; on overflow raises HTTP 429 with a
     ``Retry-After`` header (seconds, integer).
 
@@ -340,18 +356,7 @@ def require_rate_limit(
     - SAD.md §3.1 — cross-cutting concerns live in api.dependencies.
     - NFR-02 — failure body MUST NOT echo the X-API-Key.
     """  # NFR-02 NFR-09 NFR-10 NFR-11
-    # Runtime lookup of the auth dependency so a test fixture that
-    # patches ``taskq_api.api.dependencies.require_api_key`` after this
-    # module was loaded is honoured by the rate-limit gate. The real
-    # ``require_api_key`` accepts ``x_api_key`` (Header extraction);
-    # the test stub does not — fall back to a no-arg call when the
-    # patched function does not accept the kwarg.
-    import taskq_api.api.dependencies as _self
-
-    try:
-        user = _self.require_api_key(x_api_key=x_api_key)
-    except TypeError:
-        user = _self.require_api_key()
+    user = _authenticate(x_api_key)
 
     key_id = user.get("key_id")
     if not isinstance(key_id, str) or not key_id:
