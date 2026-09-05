@@ -41,7 +41,7 @@ Citations:
 from __future__ import annotations
 
 import logging
-import logging.handlers  # noqa: F401  (re-exported for test_fr10 MemoryHandler capture)
+import logging.handlers  # noqa: F401  (registers logging.handlers for test_fr10 MemoryHandler)
 import uuid
 from typing import Any
 
@@ -145,6 +145,34 @@ _TITLES: dict[int, str] = {
 #: the server log; production deployments do not attach handlers to
 #: this name so the extra emit is a silent no-op.
 _TEST_CAPTURE_LOGGER_NAME = "fr10_test"
+
+
+#: Production logger name. Centralised so the dual-emit helper below
+#: has a single edit site if the module is ever renamed.
+_PRODUCTION_LOGGER_NAME = "taskq_api.errors"
+
+
+def _emit_log(
+    message: str,
+    *,
+    level: int = logging.INFO,
+    exc_info: bool = False,
+) -> None:
+    """[FR-10] Emit ``message`` to the production + test-capture loggers.
+
+    The dual emit ensures the in-process ``MemoryHandler`` attached by
+    ``test_fr10.py`` sees the same line that production logging emits
+    (AC-10.4). Production deployments do not attach handlers to
+    :data:`_TEST_CAPTURE_LOGGER_NAME`, so the extra emit is a silent
+    no-op outside the test harness.
+
+    Citations: SPEC.md line 167 — correlation_id appears in the
+    server log.
+    """  # NFR-04 NFR-09
+    for logger_name in (_PRODUCTION_LOGGER_NAME, _TEST_CAPTURE_LOGGER_NAME):
+        logging.getLogger(logger_name).log(
+            level, message, exc_info=exc_info
+        )
 
 
 def _new_correlation_id() -> str:
@@ -338,8 +366,7 @@ async def _unhandled_exception_handler(
         f"Unhandled exception correlation_id={correlation_id} "
         f"path={instance}"
     )
-    logging.getLogger("taskq_api.errors").exception(message)
-    logging.getLogger(_TEST_CAPTURE_LOGGER_NAME).exception(message)
+    _emit_log(message, level=logging.ERROR, exc_info=True)
     return _build_problem_response(
         status_code=500,
         detail="internal",
@@ -400,8 +427,7 @@ async def _correlation_id_middleware(request: Request, call_next):
         f"request method={request.method} path={request.url.path} "
         f"status={status_code} correlation_id={correlation_id}"
     )
-    logging.getLogger("taskq_api.errors").info(log_message)
-    logging.getLogger(_TEST_CAPTURE_LOGGER_NAME).info(log_message)
+    _emit_log(log_message)
     return response
 
 
