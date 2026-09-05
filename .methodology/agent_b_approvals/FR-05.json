@@ -1,0 +1,63 @@
+{
+  "review_status": "APPROVE",
+  "reason": "Requirement 1 (per-token bucket, capacity, refill) is pinned by the 429-on-overflow assertion at line 319 and the decrement assertion at line 484. Requirement 2 (429 + problem+json + Retry-After seconds) is pinned by lines 319 (status), 329-349 (Retry-After header presence/positive-integer/seconds), 360-379 (problem+json Content-Type + RFC 7807 body shape). Requirement 3 (DB-persisted + row-level lock in single transaction) is pinned by lines 484 (decrement after allowed call), 516 (bucket row survives simulated restart), 524 (tokens unchanged across restart), 542 (no LOCK TABLE), 590 (FOR UPDATE or per-bucket threading.Lock present in upsert body). Requirement 4 (/healthz, /readyz exempt) is pinned by lines 644 (100x200 on /readyz) and 659 (100x200 on /healthz), with a negative control at 675.",
+  "citations": [
+    "SPEC.md:117",
+    "SPEC.md:118",
+    "SPEC.md:119",
+    "SPEC.md:120",
+    "03-development/tests/test_fr05.py:319",
+    "03-development/tests/test_fr05.py:329",
+    "03-development/tests/test_fr05.py:340",
+    "03-development/tests/test_fr05.py:360",
+    "03-development/tests/test_fr05.py:484",
+    "03-development/tests/test_fr05.py:516",
+    "03-development/tests/test_fr05.py:524",
+    "03-development/tests/test_fr05.py:542",
+    "03-development/tests/test_fr05.py:590",
+    "03-development/tests/test_fr05.py:644",
+    "03-development/tests/test_fr05.py:659"
+  ],
+  "docs_embedded": [
+    "SPEC.md"
+  ],
+  "gaps": [
+    {
+      "severity": "low",
+      "evidence_type": "over_interpretation",
+      "canonical_ref": "03-development/tests/test_fr05.py:353",
+      "message": "Asserts Retry-After <= 5 when refill_per_sec=5; SPEC line 118 only requires a positive integer seconds-form. A correct implementation returning 6s (legal per SPEC) would fail this assertion. Main Retry-After contract still pinned by 329/340/346.",
+      "fr_id": "FR-05"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr05.py:489",
+      "message": "after_call_tokens <= persisted_tokens_before is logically implied by the preceding after_call_tokens < persisted_tokens_before (line 484); the second check adds no new failure mode and is a redundant tautology. The 'no double-credit' invariant is fully covered by line 484.",
+      "fr_id": "FR-05"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr05.py:295",
+      "message": "Input-echo assertions (lines 295-298, 383, 430-433, 633-636) re-check the test's own hardcoded constants (num_requests==21, bucket_capacity==20, expected_status==429). They are true regardless of the implementation; they do not pin down any requirement. The real assertions below them in each test do carry the contract.",
+      "fr_id": "FR-05"
+    }
+  ],
+  "criteria_review": {
+    "requirement_path": "SPEC.md",
+    "declared_tests": [
+      "test_healthz_readyz_exempt_from_rate_limit",
+      "test_rate_bucket_persists_across_restart_and_uses_row_lock",
+      "test_rate_limit_429_with_retry_after"
+    ],
+    "assertion_digests": {
+      "test_healthz_readyz_exempt_from_rate_limit": "a705b9470a91a138211baec882ebdd267ffe13e70892d7994884ef99a2520466",
+      "test_rate_bucket_persists_across_restart_and_uses_row_lock": "bfb8e8c850268999fce42ac31555889dd7b06cff1e92f07077f93019712b704a",
+      "test_rate_limit_429_with_retry_after": "f11184c02e71f1def6fd623d19e747b57cd9f22a610e78720dcfe607e5c3204a"
+    },
+    "test_files": [
+      "03-development/tests/test_fr05.py"
+    ]
+  }
+}
