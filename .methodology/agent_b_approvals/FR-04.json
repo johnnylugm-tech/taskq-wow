@@ -1,0 +1,66 @@
+{
+  "review_status": "APPROVE",
+  "reason": "Each FR-04 requirement is pinned by real assertions: hierarchy (SPEC L111) by status checks at test_fr04.py L250/L259/L270 (write covers read, admin covers read, read does NOT cover admin); 403 + no-existence-leak (SPEC L112) by status, problem+json content-type, type field, and structural-identity body comparison at L324/L331/L342/L351/L380/L389; single shared dependency (SPEC L113) by import-count assertion at L469 and callable check at L487.",
+  "citations": [
+    "SPEC.md:111",
+    "SPEC.md:112",
+    "SPEC.md:113",
+    "03-development/tests/test_fr04.py:250",
+    "03-development/tests/test_fr04.py:259",
+    "03-development/tests/test_fr04.py:270",
+    "03-development/tests/test_fr04.py:324",
+    "03-development/tests/test_fr04.py:331",
+    "03-development/tests/test_fr04.py:342",
+    "03-development/tests/test_fr04.py:346",
+    "03-development/tests/test_fr04.py:351",
+    "03-development/tests/test_fr04.py:380",
+    "03-development/tests/test_fr04.py:385",
+    "03-development/tests/test_fr04.py:386",
+    "03-development/tests/test_fr04.py:389",
+    "03-development/tests/test_fr04.py:469",
+    "03-development/tests/test_fr04.py:487",
+    "03-development/tests/test_fr04.py:508"
+  ],
+  "docs_embedded": [
+    "SPEC.md"
+  ],
+  "gaps": [
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr04.py:240",
+      "message": "Self-echo assertion `assert lower_scope == \"read\" and higher_scope == \"admin\"` merely re-checks the test's own local variable; the real hierarchy proof comes from the downstream status-code assertions at L250/L259/L270. Coexists harmlessly with the real checks.",
+      "fr_id": "FR-04"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr04.py:350",
+      "message": "Self-echo assertion `assert expected_body_contains_task_id == \"false\"` only re-checks a test-local literal; the real no-existence-leak proof is `real_task_id not in response_real.text` at L351 and the structural-identity comparison of real-vs-fake response bodies at L380/L385/L386/L389. Coexists harmlessly with the real checks.",
+      "fr_id": "FR-04"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr04.py:395",
+      "message": "Self-echo assertions at L395-396 (`assert target_task_id_exists == \"true\"`, `assert expected_body_contains_task_id == \"false\"`) only echo the test's own string constants; the genuine AC-4.2 contract is enforced by the earlier structural-identity assertions in the same test. Coexists harmlessly with the real checks.",
+      "fr_id": "FR-04"
+    }
+  ],
+  "criteria_review": {
+    "requirement_path": "SPEC.md",
+    "declared_tests": [
+      "test_all_v1_routes_share_single_auth_dependency",
+      "test_insufficient_scope_403_no_existence_leak",
+      "test_scope_hierarchy_inclusion"
+    ],
+    "assertion_digests": {
+      "test_all_v1_routes_share_single_auth_dependency": "acd06797596c01663bbe7410e86376b1e661e5c1471e6b2da989960d6cac97f9",
+      "test_insufficient_scope_403_no_existence_leak": "27f3be602d43085c3230ce0c53d41f8b34b525e6c16cefd7c5b7713e59d78765",
+      "test_scope_hierarchy_inclusion": "f10a2ce802cb69b39dea64f8967347ddbf5798965a45cd92357b32b6c93f00c9"
+    },
+    "test_files": [
+      "03-development/tests/test_fr04.py"
+    ]
+  }
+}
