@@ -1,0 +1,67 @@
+{
+  "review_status": "APPROVE",
+  "reason": "FR-10 Content-Type requirement (SPEC.md:164) asserted at test_fr10.py:303; six body fields requirement (SPEC.md:165) asserted at test_fr10.py:357,361,366,371 and re-asserted at test_fr10.py:679; no-internals requirement (SPEC.md:166) asserted at test_fr10.py:438,452,457,474; correlation_id-in-header-and-log requirement (SPEC.md:167) asserted at test_fr10.py:536,542,547,555; status-code mapping requirement (SPEC.md:168) asserted at test_fr10.py:662-694.",
+  "citations": [
+    "SPEC.md:164",
+    "SPEC.md:165",
+    "SPEC.md:166",
+    "SPEC.md:167",
+    "SPEC.md:168",
+    "03-development/tests/test_fr10.py:303",
+    "03-development/tests/test_fr10.py:357",
+    "03-development/tests/test_fr10.py:361",
+    "03-development/tests/test_fr10.py:366",
+    "03-development/tests/test_fr10.py:371",
+    "03-development/tests/test_fr10.py:438",
+    "03-development/tests/test_fr10.py:452",
+    "03-development/tests/test_fr10.py:457",
+    "03-development/tests/test_fr10.py:474",
+    "03-development/tests/test_fr10.py:536",
+    "03-development/tests/test_fr10.py:542",
+    "03-development/tests/test_fr10.py:547",
+    "03-development/tests/test_fr10.py:555",
+    "03-development/tests/test_fr10.py:662",
+    "03-development/tests/test_fr10.py:679",
+    "03-development/tests/test_fr10.py:688",
+    "03-development/tests/test_fr10.py:694"
+  ],
+  "docs_embedded": [
+    "SPEC.md"
+  ],
+  "gaps": [
+    {
+      "severity": "low",
+      "evidence_type": "over_interpretation",
+      "canonical_ref": "03-development/tests/test_fr10.py:474",
+      "message": "The file-path leak check is anchored on a single hardcoded substring '/srv/taskq_api/' (the fragment present in the trigger exception). A GREEN handler that re-emits a *different* internal path (e.g., '/usr/lib/python3/...') would pass this check while still violating SPEC.md:166.",
+      "fr_id": "FR-10"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "over_interpretation",
+      "canonical_ref": "03-development/tests/test_fr10.py:444-457",
+      "message": "The 'no DB schema leak' half of SPEC.md:166 (資料庫結構描述) is not directly checked — only SQL DML keywords ('select','insert',...) and product names ('sqlite','postgres') are scanned. DDL-shaped leaks like 'CREATE TABLE tasks (id INT, name TEXT)' would not necessarily trip the regex.",
+      "fr_id": "FR-10"
+    }
+  ],
+  "criteria_review": {
+    "requirement_path": "SPEC.md",
+    "declared_tests": [
+      "test_500_detail_omits_internals",
+      "test_all_error_responses_use_problem_json_content_type",
+      "test_correlation_id_consistent_across_response_and_log",
+      "test_error_code_mapping_observed_per_spec_table",
+      "test_problem_json_body_has_required_fields"
+    ],
+    "assertion_digests": {
+      "test_500_detail_omits_internals": "78e783f63f75e16f8f098834da1daf8f65f1ce1028e1a455ae48ee379850d706",
+      "test_all_error_responses_use_problem_json_content_type": "fdb1837c2e1d52ba8d7433788272e24c9ced1750e0af8cd1788b6f26170ff49f",
+      "test_correlation_id_consistent_across_response_and_log": "efab4f66bcd99c1fb1eca6d9901c362de6e4e974d5056b9232577181fe6b2d35",
+      "test_error_code_mapping_observed_per_spec_table": "0b3f24dd0fbdd89c2238cdd59579118f37bad2cc8811abdaa390af9026451373",
+      "test_problem_json_body_has_required_fields": "5729d6332a2e2b1ff53d6ccd3d25fe0353fe655671082ea36587e0726aff4bda"
+    },
+    "test_files": [
+      "03-development/tests/test_fr10.py"
+    ]
+  }
+}
