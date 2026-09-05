@@ -121,7 +121,9 @@
         },
         {
           "name": "migrations.versions.v3_split_results"
-        }
+        },
+        "migrations",
+        "migrations.versions"
       ],
       "allowed_dependencies": [
         "models",
