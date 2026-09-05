@@ -53,6 +53,7 @@ from fastapi.responses import JSONResponse
 
 from taskq_api.repository.api_keys import fetch_api_key_by_hash
 from taskq_api.service.auth import hash_api_key
+from taskq_api.service.rate_limit import check_rate_limit
 
 
 # ---------------------------------------------------------------------------
@@ -254,3 +255,113 @@ def require_scope(required: str) -> Callable[..., dict]:
         return user
 
     return _dep
+
+
+# ---------------------------------------------------------------------------
+# FR-05 — per-token token-bucket rate limit dependency.
+#
+# ``require_rate_limit`` MUST be attached to every /v1/* route (SPEC.md
+# line 113 單一中介層 extended with the FR-05 rate-limit layer). It
+# composes ``require_api_key`` so the bucket key is the authenticated
+# ``key_id`` (SPEC.md line 117 — per-token 令牌桶). On overflow it
+# raises HTTPException(429) carrying:
+#   * detail = constant string "rate limit exceeded" (NP-08 / NFR-02 —
+#     never echo the bucket key or the X-API-Key),
+#   * headers["content-type"] = "application/problem+json" (FR-10 —
+#     the patched handler below renders RFC 7807 with
+#     type=/errors/http, title=HTTP Error, status=429, detail),
+#   * headers["Retry-After"] = <seconds-int> (SPEC.md line 118 — 秒
+#     delta-seconds form, RFC 7231 §7.1.3).
+#
+# ``/healthz`` and ``/readyz`` MUST NOT depend on ``require_rate_limit``
+# (SPEC.md line 120 / FR-09); the test app mounts those routes without
+# this dependency to verify the exemption.
+#
+# The auth lookup goes through a runtime ``_self.require_api_key`` so a
+# test fixture that monkey-patches ``taskq_api.api.dependencies.
+# require_api_key`` takes effect (test_fr05.py patches the attribute
+# BEFORE the test app is built; a static ``Depends(require_api_key)``
+# would capture the original reference at module load and bypass the
+# patch). The ``try / except TypeError`` fallback handles the case
+# where the patched stub does not accept the ``x_api_key`` kwarg; the
+# real ``require_api_key`` always does.
+# ---------------------------------------------------------------------------
+
+
+_RATE_LIMITED_DETAIL = "rate limit exceeded"
+
+
+def _rate_limited(retry_after_seconds: int) -> NoReturn:
+    """Raise 429 carrying the problem+json marker + Retry-After (FR-05).
+
+    Detail is a CONSTANT (NP-08 / NFR-02). The ``Retry-After`` header
+    carries the integer seconds form per SPEC.md line 118
+    ('Retry-After header (秒)'). The patched handler below renders the
+    body as RFC 7807 problem+json with ``type=/errors/http``,
+    ``title=HTTP Error``, ``status=429``, ``detail=<constant>``.
+
+    Citations: SPEC.md line 118 — 429 + problem+json + Retry-After (秒);
+    TEST_SPEC.md §1 FR-05 AC-5.1.
+    """  # NFR-02 NFR-09 NFR-10
+    raise HTTPException(
+        status_code=429,
+        detail=_RATE_LIMITED_DETAIL,
+        headers={
+            "content-type": _PROBLEM_CONTENT_TYPE,
+            "Retry-After": str(int(retry_after_seconds)),
+        },
+    )
+
+
+def require_rate_limit(
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> dict:
+    """FastAPI dependency: enforce per-token token-bucket rate limit.
+
+    Composes the FR-03 ``require_api_key`` dependency via a runtime
+    lookup so test fixtures that monkey-patch
+    ``taskq_api.api.dependencies.require_api_key`` (e.g. test_fr05.py)
+    take effect. Charges one token against the bucket keyed by the
+    authenticated ``key_id``; on overflow raises HTTP 429 with a
+    ``Retry-After`` header (seconds, integer).
+
+    ``/healthz`` and ``/readyz`` MUST NOT depend on this dependency
+    (SPEC.md line 120).
+
+    Citations:
+    - SPEC.md line 117 — per-token 令牌桶; capacity TASKQ_RATE_BURST,
+      refill TASKQ_RATE_PER_SEC.
+    - SPEC.md line 118 — 超限 → HTTP 429 + problem+json + Retry-After
+      header (秒).
+    - SPEC.md line 119 — 狀態存於資料庫 (跨 worker 一致), 更新必須在單一
+      交易內以 row-level lock 進行.
+    - SPEC.md line 120 — /healthz, /readyz 不受限.
+    - TEST_SPEC.md §1 FR-05 AC-5.1, AC-5.3.
+    - SAD.md §3.1 — cross-cutting concerns live in api.dependencies.
+    - NFR-02 — failure body MUST NOT echo the X-API-Key.
+    """  # NFR-02 NFR-09 NFR-10 NFR-11
+    # Runtime lookup of the auth dependency so a test fixture that
+    # patches ``taskq_api.api.dependencies.require_api_key`` after this
+    # module was loaded is honoured by the rate-limit gate. The real
+    # ``require_api_key`` accepts ``x_api_key`` (Header extraction);
+    # the test stub does not — fall back to a no-arg call when the
+    # patched function does not accept the kwarg.
+    import taskq_api.api.dependencies as _self
+
+    try:
+        user = _self.require_api_key(x_api_key=x_api_key)
+    except TypeError:
+        user = _self.require_api_key()
+
+    key_id = user.get("key_id")
+    if not isinstance(key_id, str) or not key_id:
+        # Without an authenticated key_id there is no bucket to charge;
+        # treat as if auth failed (the FR-03 row contract guarantees
+        # key_id on success — this branch is unreachable in normal
+        # operation).
+        _unauthorized()
+
+    decision = check_rate_limit(key_id)
+    if not decision.allowed:
+        _rate_limited(decision.retry_after_seconds)
+    return user
