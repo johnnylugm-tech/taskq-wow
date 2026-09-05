@@ -251,7 +251,8 @@ async def run_task(
 #     ``except asyncio.CancelledError`` records INTERRUPTED and re-raises.
 #     Bare-except would silently swallow the cancellation the caller
 #     initiated, violating NFR-03.
-#   * The default ``_run_one`` enforces ``process.kill()`` followed by
+#   * The default ``_run_one`` delegates to ``execute_command``
+#     (FR-02), which enforces ``process.kill()`` followed by
 #     ``await process.wait()`` so the OS reaps the child; orphan
 #     subprocesses are a SPEC.md line 149 + §8 #25 violation.
 #   * ``drain()`` uses ``asyncio.wait_for(asyncio.gather(...))`` so a
@@ -292,10 +293,10 @@ class TaskRunner:
                           outside the runner.
 
     Test seams:
-        ``_run_one``    — overridable per-task body. The default spawns a
-                          subprocess; tests patch this to drive the
-                          semaphore / drain paths without spawning real
-                          child processes.
+        ``_run_one``    — overridable per-task body. The default
+                          delegates to ``execute_command`` (FR-02);
+                          tests patch this to drive the semaphore /
+                          drain paths without spawning real subprocesses.
 
     Citations:
     - SPEC.md line 145 — FR-08 非同步執行器.
@@ -314,23 +315,18 @@ class TaskRunner:
         drain_timeout: Optional[float] = None,
         task_timeout: Optional[float] = None,
     ) -> None:
-        # Keyword-only kwargs resolve to the SPEC §5.1 config defaults
-        # when omitted so the runner behaviour matches the declared
-        # contract without the caller having to thread config through.
-        self.max_concurrent: int = (
-            int(max_concurrent)
-            if max_concurrent is not None
-            else int(config.TASKQ_MAX_CONCURRENT)
+        # Keyword-only kwargs default to the SPEC §5.1 config values; the
+        # single ``_resolve`` helper coerces each slot to the correct
+        # numeric type (``int`` for the cap, ``float`` for both timeouts)
+        # so a mismatched override raises rather than silently truncating.
+        self.max_concurrent: int = self._resolve(
+            max_concurrent, int(config.TASKQ_MAX_CONCURRENT)
         )
-        self.drain_timeout: float = (
-            float(drain_timeout)
-            if drain_timeout is not None
-            else float(config.TASKQ_DRAIN_TIMEOUT)
+        self.drain_timeout: float = self._resolve(
+            drain_timeout, float(config.TASKQ_DRAIN_TIMEOUT)
         )
-        self.task_timeout: float = (
-            float(task_timeout)
-            if task_timeout is not None
-            else float(config.TASKQ_TASK_TIMEOUT)
+        self.task_timeout: float = self._resolve(
+            task_timeout, float(config.TASKQ_TASK_TIMEOUT)
         )
         # The semaphore enforces ``max_concurrent`` AC-8.1 cap; excess
         # ``_scheduled`` coroutines wait on ``acquire()`` instead of
@@ -344,6 +340,18 @@ class TaskRunner:
         # runner can answer "what state is this task in?" for drain
         # accounting and for tests asserting INTERRUPTED.
         self.task_states: dict[str, str] = {}
+
+    @staticmethod
+    def _resolve(value, default):
+        """Return ``value`` coerced to ``type(default)``, or ``default``.
+
+        The runner holds three config slots of distinct numeric types;
+        ``type(default)`` lets one helper serve all three while keeping
+        mismatched overrides (e.g. a ``float`` for an ``int`` slot) loud.
+        """
+        if value is None:
+            return default
+        return type(default)(value)
 
     async def submit(self, task_id: str, command: str) -> str:
         """Schedule one background run; return its ``run_id``.
@@ -411,49 +419,26 @@ class TaskRunner:
     async def _run_one(
         self, task_id: str, command: str, *, timeout: float
     ) -> Optional[dict]:
-        """Default per-task body — spawn subprocess, enforce timeout.
+        """Default per-task body — delegate subprocess handling.
 
-        Spawns via
-        ``asyncio.create_subprocess_exec(*shlex.split(command))`` (the
-        FR-02 spawn form; shell-mode kwarg forbidden — SPEC.md line 96
-        + §8 #16). Wraps ``communicate()`` in ``asyncio.wait_for`` so
-        a runaway child is bounded. On timeout the child is killed and
-        ``await process.wait()`` is called so the OS reaps it — SPEC.md
-        line 149 + §8 #25 forbid orphan subprocesses.
+        The actual subprocess + timeout enforcement lives in
+        ``execute_command`` (FR-02), which already enforces
+        ``process.kill()`` + ``await process.wait()`` to keep the
+        shutdown orphan-free (SPEC.md line 149 + §8 #25). Keeping this
+        method as a thin wrapper preserves the test seam: tests patch
+        ``runner._run_one`` with custom bodies that drive the
+        semaphore / drain paths without spawning real subprocesses.
 
-        Returns a dict the wrapper inspects via ``result.get("state")``;
-        may return ``None`` if a test patches this with a bare
-        coroutine body (the wrapper falls back to ``"done"``).
+        ``task_id`` is part of the seam signature (kept for symmetry
+        with patched bodies in ``tests/test_fr08.py``) though the
+        default body does not consume it.
+
+        Returns an outcome dict the wrapper inspects via
+        ``result.get("state")``; may return ``None`` when a test
+        patches this method with an implicit-return coroutine (the
+        wrapper falls back to ``"done"``).
         """  # NFR-02 NFR-09 NFR-10
-        args = shlex.split(command)
-        started = time.monotonic()
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            # SPEC.md line 149 — kill, then await wait so the OS reaps
-            # the child. Without the second ``await`` the child lingers
-            # as a zombie until the parent exits, which is the orphan
-            # case AC-8.3 forbids.
-            process.kill()
-            await process.wait()
-            return {"state": "timeout", "exit_code": -1}
-        exit_code = await process.wait()
-        state = "done" if exit_code == 0 else "failed"
-        return {
-            "state": state,
-            "exit_code": exit_code,
-            "stdout_tail": stdout_bytes.decode("utf-8", errors="replace"),
-            "stderr_tail": stderr_bytes.decode("utf-8", errors="replace"),
-            "duration_ms": int((time.monotonic() - started) * 1000),
-        }
+        return await execute_command(command, timeout=timeout)
 
     async def drain(self) -> dict:
         """Wait up to ``drain_timeout`` for in-flight tasks; cancel overdue.
