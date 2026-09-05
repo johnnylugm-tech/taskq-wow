@@ -36,14 +36,13 @@ Citations:
 """  # NFR-04 NFR-09 NFR-10 NFR-11
 from __future__ import annotations
 
-import inspect
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 
-from taskq_api.api.dependencies import _SCOPE_RANK
+import taskq_api.api.dependencies as _deps
 from taskq_api.repository import results as repo_results
 from taskq_api.repository import tasks as repo_tasks
 from taskq_api.service.rate_limit import get_rate_limit_rejections
@@ -51,8 +50,10 @@ from taskq_api.service.rate_limit import get_rate_limit_rejections
 
 router = APIRouter(tags=["metrics"])
 
-_PROBLEM_CONTENT_TYPE = "application/problem+json"
-_ADMIN_RANK = _SCOPE_RANK.get("admin", 3)
+# Admin sits at the top of the ``read ⊂ write ⊂ admin`` scope
+# hierarchy (SPEC.md line 111). Hoisted as a module constant so the
+# gate is a one-liner comparison and the rank is named in one place.
+_ADMIN_RANK = _deps._SCOPE_RANK.get("admin", 3)
 
 
 # Status names that ``task_counts_by_status`` MUST surface even when no
@@ -98,10 +99,11 @@ def _admin_scope_gate() -> dict:
     """FastAPI dependency: enforce ``admin`` scope with call-time lookup.
 
     Resolves ``taskq_api.api.dependencies.require_api_key`` at call
-    time so the FR-09 test fixture (which monkey-patches that name
-    AFTER the router module is imported) is still honoured. Mirrors
-    the call-time resolution pattern used by ``_authenticate`` in
-    ``taskq_api.api.dependencies`` (rate-limit dependency module).
+    time via the shared ``_deps._authenticate(None)`` helper so the
+    FR-09 test fixture (which monkey-patches that name AFTER this
+    router module is imported) is still honoured. This is the same
+    runtime-lookup pattern used by ``require_rate_limit`` in
+    ``taskq_api.api.dependencies``.
 
     On insufficient scope raises HTTP 403 carrying the FR-04 problem
     +json marker (``content-type: application/problem+json``) so the
@@ -112,29 +114,12 @@ def _admin_scope_gate() -> dict:
     problem+json); SPEC.md line 158 (admin scope mandatory for
     /v1/metrics).
     """  # NFR-04 NFR-09 NFR-10 NFR-11
-    # Look up ``require_api_key`` through the module object (NOT a
-    # top-level import) so a fixture that monkey-patches
-    # ``taskq_api.api.dependencies.require_api_key`` after this
-    # router is imported still resolves to the patched version. The
-    # same pattern is used by ``_authenticate`` in
-    # ``taskq_api.api.dependencies`` for the rate-limit dependency.
-    import taskq_api.api.dependencies as _deps
-
-    dependency = _deps.require_api_key
-    parameters = inspect.signature(dependency).parameters
-    if "x_api_key" in parameters:
-        # Real ``require_api_key`` — pass ``None`` so the absence of
-        # the X-API-Key header surfaces the FR-03 401 path. The
-        # dependency itself raises before we reach the scope check.
-        user = dependency(x_api_key=None)
-    else:
-        # Patched stub from a test fixture — call with no args.
-        user = dependency()
-    if _SCOPE_RANK.get(user.get("scope", ""), 0) < _ADMIN_RANK:
+    user = _deps._authenticate(None)
+    if _deps._SCOPE_RANK.get(user.get("scope", ""), 0) < _ADMIN_RANK:
         raise HTTPException(
             status_code=403,
-            detail="forbidden",
-            headers={"content-type": _PROBLEM_CONTENT_TYPE},
+            detail=_deps._FORBIDDEN_DETAIL,
+            headers={"content-type": _deps._PROBLEM_CONTENT_TYPE},
         )
     return user
 
@@ -165,8 +150,7 @@ def _collect_metrics() -> Dict[str, Any]:
             status = task.get("status", "")
             if status in counts:
                 counts[status] += 1
-            history = repo_results.fetch_results_for_task(None, task["id"])
-            for run in history:
+            for run in repo_results.fetch_results_for_task(None, task["id"]):
                 durations.append(int(run.get("duration_ms", 0)))
         if not next_cursor:
             break

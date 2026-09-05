@@ -35,13 +35,22 @@ Citations:
 """  # NFR-04 NFR-09 NFR-10 NFR-11
 from __future__ import annotations
 
-from typing import Optional
+from pathlib import Path
+from typing import Callable, Optional
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 
 router = APIRouter(tags=["health"])
+
+# Fail-closed detail messages (SPEC.md line 157 + §8 #10/#11). The
+# strings MUST identify WHICH check failed so an operator can
+# diagnose the cause without grepping logs. Hoisted as constants so
+# the readiness handler stays a one-liner per branch and so the
+# fail-closed intent is named in one place.
+_DB_FAILURE_DETAIL = "db unreachable: connection probe failed"
+_MIGRATION_FAILURE_DETAIL = "migration not at head: alembic current != head"
 
 
 def check_db_reachable() -> bool:
@@ -74,6 +83,19 @@ def check_db_reachable() -> bool:
         return False
 
 
+def _migrations_dir() -> str:
+    """Return the absolute path to the in-tree ``migrations/`` directory.
+
+    Computed from this module's location so the alembic probe survives
+    being imported from any working directory (the previous hard-coded
+    relative path silently pointed at a non-existent directory whenever
+    the cwd was not the repo root, collapsing every ``/readyz`` call
+    to 503 with "migration not at head" — indistinguishable from the
+    real failure mode the SPEC contract requires operators to see).
+    """  # NFR-11
+    return str(Path(__file__).resolve().parent.parent / "migrations")
+
+
 def check_migrations_at_head() -> bool:
     """Return ``True`` iff ``alembic current`` matches the script head.
 
@@ -100,9 +122,8 @@ def check_migrations_at_head() -> bool:
 
         from taskq_api.repository.session import database_url
 
-        migrations_dir = "03-development/src/migrations"
         cfg = AlembicConfig()
-        cfg.set_main_option("script_location", migrations_dir)
+        cfg.set_main_option("script_location", _migrations_dir())
         cfg.set_main_option("sqlalchemy.url", database_url())
         script_directory = ScriptDirectory.from_config(cfg)
         head_revision: Optional[str] = script_directory.head
@@ -114,6 +135,25 @@ def check_migrations_at_head() -> bool:
         # database has never been stamped — also a not-at-head state.
         return bool(current_rev) and head_revision in current_rev
     except Exception:  # noqa: BLE001  (probe intentionally total — §8 #11)
+        return False
+
+
+def _safe_check(probe: Callable[[], bool]) -> bool:
+    """Run ``probe`` and return its boolean result, swallowing any error.
+
+    Centralizes the fail-closed pattern shared by both readiness
+    predicates: a probe that raises (DB outage, alembic misconfig,
+    missing config, …) MUST surface as a 503 with a diagnostic detail,
+    not as an uncaught exception that escapes the handler (SPEC.md
+    §8 #10/#11). The exception class is intentionally broad — the
+    probe body itself already filters "expected" cases into ``False``,
+    so anything reaching this ``except`` clause is by definition
+    unexpected and the operator only cares about the failure mode
+    class, not the exact exception type.
+    """  # NFR-04 NFR-09 NFR-11
+    try:
+        return bool(probe())
+    except Exception:  # noqa: BLE001  (handler intentionally total)
         return False
 
 
@@ -149,25 +189,13 @@ async def readyz_endpoint() -> JSONResponse:
 
     Citations: SPEC.md line 157 + §8 #10 / #11.
     """  # NFR-04 NFR-09 NFR-11
-    db_ok = False
-    try:
-        db_ok = bool(check_db_reachable())
-    except Exception:
-        db_ok = False
-    if not db_ok:
+    if not _safe_check(check_db_reachable):
         return JSONResponse(
-            status_code=503,
-            content={"detail": "db unreachable: connection probe failed"},
+            status_code=503, content={"detail": _DB_FAILURE_DETAIL}
         )
-    migrations_ok = False
-    try:
-        migrations_ok = bool(check_migrations_at_head())
-    except Exception:
-        migrations_ok = False
-    if not migrations_ok:
+    if not _safe_check(check_migrations_at_head):
         return JSONResponse(
-            status_code=503,
-            content={"detail": "migration not at head: alembic current != head"},
+            status_code=503, content={"detail": _MIGRATION_FAILURE_DETAIL}
         )
     return JSONResponse(status_code=200, content={"status": "ok"})
 
