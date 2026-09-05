@@ -2,34 +2,40 @@
 # returncode: 0
 # agent_score: 100.0 | threshold: 80.0
 
-........................................................................ [ 93%]
-.....                                                                    [100%]
+........................................................................ [ 85%]
+............                                                             [100%]
 ================================ tests coverage ================================
 ______________ coverage: platform darwin, python 3.11.15-final-0 _______________
 
-Name                                                      Stmts   Miss  Cover   Missing
----------------------------------------------------------------------------------------
-03-development/src/_p2_preflight_config_keys.py              12     12     0%   16-27
-03-development/src/taskq_api/__init__.py                      0      0   100%
-03-development/src/taskq_api/api/__init__.py                  0      0   100%
-03-development/src/taskq_api/api/dependencies.py             66      0   100%
-03-development/src/taskq_api/api/runs.py                     28      0   100%
-03-development/src/taskq_api/api/tasks.py                    64      0   100%
-03-development/src/taskq_api/config.py                       13      0   100%
-03-development/src/taskq_api/errors.py                        3      3     0%   16-27
-03-development/src/taskq_api/models/__init__.py               0      0   100%
-03-development/src/taskq_api/models/task.py                  18      0   100%
-03-development/src/taskq_api/repository/__init__.py           0      0   100%
-03-development/src/taskq_api/repository/api_keys.py          40      0   100%
-03-development/src/taskq_api/repository/rate_buckets.py      41      0   100%
-03-development/src/taskq_api/repository/results.py           20      0   100%
-03-development/src/taskq_api/repository/session.py           61      0   100%
-03-development/src/taskq_api/repository/tasks.py             62      0   100%
-03-development/src/taskq_api/service/__init__.py              0      0   100%
-03-development/src/taskq_api/service/auth.py                 12      0   100%
-03-development/src/taskq_api/service/rate_limit.py           51      0   100%
-03-development/src/taskq_api/service/runner.py               44      0   100%
-03-development/src/taskq_api/service/tasks.py                23      0   100%
----------------------------------------------------------------------------------------
-TOTAL                                                       558     15    97%
-77 passed in 1.43s
+Name                                                         Stmts   Miss  Cover   Missing
+------------------------------------------------------------------------------------------
+03-development/src/_p2_preflight_config_keys.py                 12     12     0%   16-27
+03-development/src/migrations/__init__.py                        1      0   100%
+03-development/src/migrations/env.py                            22      1    95%   32
+03-development/src/migrations/versions/__init__.py               1      0   100%
+03-development/src/migrations/versions/v1_initial.py            13      0   100%
+03-development/src/migrations/versions/v2_add_tags.py           15      0   100%
+03-development/src/migrations/versions/v3_split_results.py      31      0   100%
+03-development/src/taskq_api/__init__.py                         0      0   100%
+03-development/src/taskq_api/api/__init__.py                     0      0   100%
+03-development/src/taskq_api/api/dependencies.py                66      0   100%
+03-development/src/taskq_api/api/runs.py                        28      0   100%
+03-development/src/taskq_api/api/tasks.py                       64      0   100%
+03-development/src/taskq_api/config.py                          13      0   100%
+03-development/src/taskq_api/errors.py                           3      3     0%   16-27
+03-development/src/taskq_api/models/__init__.py                  0      0   100%
+03-development/src/taskq_api/models/task.py                     18      0   100%
+03-development/src/taskq_api/repository/__init__.py              0      0   100%
+03-development/src/taskq_api/repository/api_keys.py             40      0   100%
+03-development/src/taskq_api/repository/rate_buckets.py         41      0   100%
+03-development/src/taskq_api/repository/results.py              20      0   100%
+03-development/src/taskq_api/repository/session.py              61      0   100%
+03-development/src/taskq_api/repository/tasks.py                62      0   100%
+03-development/src/taskq_api/service/__init__.py                 0      0   100%
+03-development/src/taskq_api/service/auth.py                    12      0   100%
+03-development/src/taskq_api/service/rate_limit.py              51      0   100%
+03-development/src/taskq_api/service/runner.py                  44      0   100%
+03-development/src/taskq_api/service/tasks.py                   23      0   100%
+------------------------------------------------------------------------------------------
+TOTAL                                                          641     16    98%
+84 passed in 1.55s

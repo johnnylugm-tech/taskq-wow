@@ -38,3 +38,4 @@
 {"ts": 1788571562.731849, "component": "gate:arch-constraints", "what": "1 delivered module(s) are outside every import-linter contract", "why": "lint-imports can report the contract kept while these modules import anything they like", "owner": "project", "data": {"uncovered_modules": ["taskq_api"]}}
 {"ts": 1788571930.2246468, "component": "run-fr-step:CODE-FIX", "what": "max_turns escalated 50 -> 100", "why": "FR-06 CODE-FIX was cut off at its turn ceiling; re-dispatching at the same ceiling cannot finish what did not fit", "owner": "infra"}
 {"ts": 1788572305.086074, "component": "gate:verify-target", "what": "`make verify-system` recipe not examined", "why": "no Makefile in /Users/johnny/projects/taskq-wow", "owner": "project"}
+{"ts": 1788573431.415605, "component": "gate:verify-target", "what": "`make verify-system` recipe not examined", "why": "no Makefile in /Users/johnny/projects/taskq-wow", "owner": "project"}
