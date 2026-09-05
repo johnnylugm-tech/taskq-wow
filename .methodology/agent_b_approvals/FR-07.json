@@ -1,0 +1,78 @@
+{
+  "review_status": "APPROVE",
+  "reason": "Each FR-07 requirement maps to a load-bearing assertion: v1 tables+drop on downgrade (test 1 line 250 / test 2 line 308), v2 tags+task_tags+unique index (test 3 lines 361-388), v3 data migration split (test 4 lines 483-525), round-trip bytewise including task_results (test 5 lines 668-690), no DROP TABLE shortcut (test 6 line 787), offline SQL DDL coverage (test 7 lines 872-880). The downstream 'input echo' assertions are tautological but the load-bearing assertions above pin down each requirement.",
+  "citations": [
+    "SPEC.md:136",
+    "SPEC.md:137",
+    "SPEC.md:138",
+    "SPEC.md:140",
+    "SPEC.md:141",
+    "SPEC.md:142",
+    "SPEC.md:143",
+    "03-development/tests/test_fr07.py:250",
+    "03-development/tests/test_fr07.py:308",
+    "03-development/tests/test_fr07.py:361",
+    "03-development/tests/test_fr07.py:388",
+    "03-development/tests/test_fr07.py:483",
+    "03-development/tests/test_fr07.py:491",
+    "03-development/tests/test_fr07.py:514",
+    "03-development/tests/test_fr07.py:521",
+    "03-development/tests/test_fr07.py:525",
+    "03-development/tests/test_fr07.py:668",
+    "03-development/tests/test_fr07.py:685",
+    "03-development/tests/test_fr07.py:787",
+    "03-development/tests/test_fr07.py:811",
+    "03-development/tests/test_fr07.py:872",
+    "03-development/tests/test_fr07.py:880"
+  ],
+  "docs_embedded": [
+    "SPEC.md"
+  ],
+  "gaps": [
+    {
+      "severity": "medium",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr07.py:757",
+      "message": "The 'no DROP TABLE shortcut' grep matches only the literal double-quoted pattern `op.execute(\"DROP TABLE` (line 757); single-quoted variants, lowercase forms, or string-concatenated equivalents would slip past this check and could still bypass Alembic's reversible-migration tracking.",
+      "fr_id": "FR-07"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr07.py:353",
+      "message": "The v2 downgrade path (v2 → v1) is not directly exercised against v1-seeded data; `test_alembic_downgrade_base_no_residual_tables` traverses the full chain but cannot observe '不影響 v1 資料' because no v1 data is present at downgrade-base.",
+      "fr_id": "FR-07"
+    },
+    {
+      "severity": "low",
+      "evidence_type": "methodology_artifact",
+      "canonical_ref": "03-development/tests/test_fr07.py:872-880",
+      "message": "Offline-SQL coverage asserts only CREATE TABLE TASKS and CREATE TABLE TASK_RESULTS; DDL for `api_keys`, `tags`, `task_tags` and `ix_tasks_name_unique` is not asserted, leaving partial coverage of the 'migration 檔本身納入測試覆蓋' requirement.",
+      "fr_id": "FR-07"
+    }
+  ],
+  "criteria_review": {
+    "requirement_path": "SPEC.md",
+    "declared_tests": [
+      "test_alembic_downgrade_base_no_residual_tables",
+      "test_alembic_upgrade_head_succeeds",
+      "test_alembic_v2_adds_tags_and_unique_index",
+      "test_alembic_v3_splits_results_with_data_migration",
+      "test_migration_files_have_real_downgrade_no_drop_table_shortcuts",
+      "test_migration_offline_sql_generation_matches_expectations",
+      "test_migration_round_trip_preserves_sample_data_bytewise"
+    ],
+    "assertion_digests": {
+      "test_alembic_downgrade_base_no_residual_tables": "735adb42e23998a8199761c93409b7d2e5e7d2244e96077fa6d3f73e6c01aeb1",
+      "test_alembic_upgrade_head_succeeds": "173447ce1a13d02794d9d3c6050f9bec60993043fca62371eb10cab2de2f238e",
+      "test_alembic_v2_adds_tags_and_unique_index": "49df907593cdf5826f9c73d647e3102858cbdb32f6d7bc522febd67f0c47cd0d",
+      "test_alembic_v3_splits_results_with_data_migration": "04edd184fb7e65bf9eed41734b1c19b9f6b2cd8be895ab2b10db0cdfb37c72bd",
+      "test_migration_files_have_real_downgrade_no_drop_table_shortcuts": "35c6feb833cb3acf0fc7406be72a9328f1846b658784b7effe1fddecc27d2344",
+      "test_migration_offline_sql_generation_matches_expectations": "fc7a2da434a98feacde68b03700bc0ffef0d9b6b9b5c72cc0e47d63bf06e8c84",
+      "test_migration_round_trip_preserves_sample_data_bytewise": "fd5ae851a26afb67eea67afc95b7f2441525cf6250f9eea2863fe457e338363b"
+    },
+    "test_files": [
+      "03-development/tests/test_fr07.py"
+    ]
+  }
+}
