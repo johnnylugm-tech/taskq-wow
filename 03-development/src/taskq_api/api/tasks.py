@@ -36,6 +36,21 @@ from taskq_api.service.tasks import (
     list_tasks as svc_list,
 )
 
+# FR-04 / SPEC.md line 113 — 單一中介層 (single shared dependency).
+# ``require_scope`` is the canonical FastAPI dependency that enforces
+# the hierarchical scope check (``read ⊂ write ⊂ admin``) on every
+# /v1 route. The factory is re-exported here so any future handler in
+# this module (or any sibling router that imports it from this module)
+# references the SAME function object — the AC-4.3 invariant pinned
+# down by ``test_all_v1_routes_share_single_auth_dependency``.
+#
+# The DELETE handler below still uses the Phase-3 ``X-Test-Scope``
+# stub until the rest of the authz migration lands; once Phase-4
+# gates the routes through ``Depends(require_api_key)`` the scope
+# check will become ``Depends(require_scope("admin"))`` and the stub
+# goes away.
+from taskq_api.api.dependencies import require_scope  # noqa: F401  [FR-04]
+
 router = APIRouter(tags=["tasks"])
 
 
