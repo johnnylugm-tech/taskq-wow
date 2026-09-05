@@ -43,7 +43,7 @@ from __future__ import annotations
 import logging
 import logging.handlers  # noqa: F401  (registers logging.handlers for test_fr10 MemoryHandler)
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -470,8 +470,30 @@ def install_exception_handlers(app: FastAPI) -> None:
         # dependency on :func:`_correlation_id_middleware` local).
         return await _correlation_id_middleware(request, call_next)
 
-    app.add_exception_handler(HTTPException, _http_exception_handler)
-    app.add_exception_handler(
-        RequestValidationError, _validation_exception_handler
-    )
+    # FastAPI's ``add_exception_handler`` is typed against the broad
+    # ``Exception`` supertype; the narrower ``HTTPException`` /
+    # ``RequestValidationError`` handlers below are correct at runtime
+    # (FastAPI dispatches by exception class) but do not satisfy
+    # pyright's ``ExceptionHandler`` invariant (which is
+    # ``Callable[[Request, Exception], ...]``). Wrap each in a tiny
+    # adapter whose parameter type is exactly ``Exception`` so the
+    # dispatch call is well-typed without widening the per-class
+    # handler bodies (which carry the precise ``HTTPException`` /
+    # ``RequestValidationError`` annotations those bodies rely on).
+    async def _http_exc_adapter(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        return await _http_exception_handler(
+            request, cast(HTTPException, exc)
+        )
+
+    async def _validation_exc_adapter(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        return await _validation_exception_handler(
+            request, cast(RequestValidationError, exc)
+        )
+
+    app.add_exception_handler(HTTPException, _http_exc_adapter)
+    app.add_exception_handler(RequestValidationError, _validation_exc_adapter)
     app.add_exception_handler(Exception, _unhandled_exception_handler)
