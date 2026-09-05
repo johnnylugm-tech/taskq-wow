@@ -30,8 +30,6 @@ Citations:
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -42,6 +40,7 @@ from taskq_api.repository.session import (
     TaskResultRow,
     TaskRow,
     TaskTagRow,
+    active_session,
     session_scope,
 )
 
@@ -59,27 +58,6 @@ def _now_iso() -> str:
     Citations: SPEC.md §5.3 — `tasks.created_at` timestamp column.
     """
     return datetime.now(timezone.utc).isoformat()
-
-
-@contextmanager
-def _session(session: Optional[Session]) -> Iterator[Session]:
-    """[FR-06] Use the caller's ``Session``, or open a scoped one.
-
-    When ``session`` is not ``None`` the caller owns the transaction
-    boundary (SPEC line 125) and this module must neither commit nor
-    roll back. When it is ``None`` the repository opens its own
-    ``session_scope()``, which commits on success and rolls back on
-    exception.
-
-    Citations: SPEC.md line 125 — one Session per request, boundary owned
-    by the context manager; SPEC.md line 124 — callers in service/ never
-    hold a Session themselves.
-    """  # NFR-11
-    if session is not None:
-        yield session
-    else:
-        with session_scope() as own_session:
-            yield own_session
 
 
 def _row_to_dict(row: TaskRow) -> dict:
@@ -149,7 +127,7 @@ def insert_task(session: Optional[Session], *, name: str, command: str) -> str:
     callers (``service.tasks``) translate that into ``DuplicateNameError``.
     SPEC.md line 125 — commit/rollback belongs to the context manager.
     """  # NFR-09 NFR-10
-    with _session(session) as active:
+    with active_session(session) as active:
         duplicate = active.execute(
             sa.select(TaskRow.id).where(TaskRow.name == name)
         ).first()
@@ -175,7 +153,7 @@ def fetch_task(session: Optional[Session], task_id: str) -> Optional[dict]:
     Citations: SPEC.md §3 FR-01 — GET /v1/tasks/{id} returns full record;
     SAD.md §3.1 — repository returns ``TaskDTO`` (here a plain dict).
     """  # NFR-10
-    with _session(session) as active:
+    with active_session(session) as active:
         row = active.get(TaskRow, task_id)
         if row is None:
             return None
@@ -234,7 +212,7 @@ def fetch_tasks_page(
         sa.select(sa.func.count()).select_from(TaskRow).where(*conditions)
     )
 
-    with _session(session) as active:
+    with active_session(session) as active:
         rows = active.execute(page_stmt).scalars().all()
         remaining = active.execute(remaining_stmt).scalar_one()
         items = [_row_to_dict(row) for row in rows]
@@ -255,7 +233,7 @@ def delete_task_row(session: Optional[Session], task_id: str) -> bool:
     rows in the same transaction). TEST_SPEC.md §1 FR-01 rows 8-9 —
     DELETE 403/404 contract.
     """  # NFR-10
-    with _session(session) as active:
+    with active_session(session) as active:
         row = active.get(TaskRow, task_id)
         if row is None:
             return False

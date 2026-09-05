@@ -94,8 +94,11 @@ class TaskRow(Base):
 class TaskResultRow(Base):
     """[FR-06] ``task_results`` table row (v3 schema).
 
-    Citations: SPEC.md line 98 — ``task_results`` columns; SPEC.md
-    line 127 — eager-loaded association (AC-6.4).
+    Citations: SPEC.md line 98 — ``task_results`` columns (``exit_code`` /
+    ``stdout_tail`` / ``stderr_tail`` / ``duration_ms`` / ``finished_at``);
+    SPEC.md line 99 — the run history read newest-first by
+    ``repository.results.fetch_results_for_task``; SPEC.md line 127 —
+    eager-loaded association (AC-6.4).
     """  # NFR-11
 
     __tablename__ = "task_results"
@@ -104,6 +107,11 @@ class TaskResultRow(Base):
     task_id: Mapped[str] = mapped_column(
         sa.ForeignKey("tasks.id"), nullable=False, index=True
     )
+    exit_code: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    stdout_tail: Mapped[str] = mapped_column(sa.Text, nullable=False, default="")
+    stderr_tail: Mapped[str] = mapped_column(sa.Text, nullable=False, default="")
+    duration_ms: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    finished_at: Mapped[str] = mapped_column(sa.String(32), nullable=False, index=True)
 
     task: Mapped["TaskRow"] = relationship(back_populates="results")
 
@@ -185,3 +193,28 @@ def session_scope() -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+@contextmanager
+def active_session(session: Session | None) -> Iterator[Session]:
+    """[FR-06] Use the caller's ``Session``, or open a scoped one.
+
+    Every repository function takes an optional ``Session`` as its first
+    argument. When the caller passes one it owns the transaction boundary
+    (SPEC line 125) and the repository must neither commit nor roll back;
+    when it passes ``None`` the repository borrows its own
+    ``session_scope()``, which commits on success and rolls back on
+    exception.
+
+    This helper lives beside ``session_scope`` so every repository module
+    resolves the boundary the same way instead of re-deriving the rule.
+
+    Citations: SPEC.md line 125 — one Session per request, boundary owned
+    by the context manager; SPEC.md line 124 — callers in service/ never
+    hold a Session themselves.
+    """  # NFR-11
+    if session is not None:
+        yield session
+    else:
+        with session_scope() as own_session:
+            yield own_session
